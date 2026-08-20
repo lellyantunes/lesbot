@@ -455,20 +455,14 @@ async function obterNomeUsuario(sock, jid, participante) {
 }
 
 // ============================================================
-// CRIAR STICKER #FF - LAYOUT PERFEITO IDÊNTICO AO WHATSAPP
+// CRIAR STICKER #FF - SEM FUNDO, CENTRALIZADO E COM NOME CORRIGIDO
 // ============================================================
 
 async function criarStickerFF(sock, jid, participante, textoCitado) {
   const CANVAS = 512
 
-  const fotoX = 15
-  const fotoY = 55
-  const tamanhoFoto = 100
-
-  const bolhaX = 125
-  const bolhaY = 40
-  const larguraBolha = 370
-  const paddingX = 22
+  const larguraBolha = 360
+  const paddingX = 20
   const alturaCabecalho = 42
   const alturaLinha = 32
 
@@ -485,16 +479,19 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   const minuto = agora.getMinutes().toString().padStart(2, '0')
   const horario = `${hora}:${minuto}`
 
-  const nomeUsuario = await obterNomeUsuario(sock, jid, participante)
+  let nomeUsuario = await obterNomeUsuario(sock, jid, participante)
+  if (!nomeUsuario || nomeUsuario === numero(participante)) {
+    nomeUsuario = `+${numero(participante)}`
+  }
   const nomeFinal = nomeUsuario.length > 20 ? nomeUsuario.substring(0, 20) + '...' : nomeUsuario
 
   let textoSvg = ''
   linhas.forEach((linha, index) => {
     if (!linha) return
-    const y = bolhaY + alturaCabecalho + 10 + (index * alturaLinha)
+    const y = 42 + 10 + (index * alturaLinha)
     textoSvg += `
       <text
-        x="${bolhaX + paddingX}"
+        x="${paddingX}"
         y="${y}"
         font-family="sans-serif"
         font-size="24"
@@ -504,16 +501,14 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
     `
   })
 
-  const horarioX = bolhaX + larguraBolha - 85
-  const horarioY = bolhaY + alturaBolha - 14
+  const horarioX = larguraBolha - 85
+  const horarioY = alturaBolha - 14
 
   const svgBolha = `
-    <svg width="${CANVAS}" height="${CANVAS}" xmlns="http://www.w3.org/2000/svg">
-      <rect width="100%" height="100%" fill="#0b141a"/>
-
+    <svg width="${larguraBolha + 20}" height="${alturaBolha + 20}" xmlns="http://www.w3.org/2000/svg">
       <rect
-        x="${bolhaX}"
-        y="${bolhaY}"
+        x="15"
+        y="0"
         width="${larguraBolha}"
         height="${alturaBolha}"
         rx="12"
@@ -523,27 +518,29 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
 
       <path
         d="
-          M ${bolhaX} ${bolhaY + 10}
-          L ${bolhaX - 12} ${bolhaY + 22}
-          L ${bolhaX} ${bolhaY + 34}
+          M 15 10
+          L 3 22
+          L 15 34
           Z
         "
         fill="#202c33"
       />
 
       <text
-        x="${bolhaX + paddingX}"
-        y="${bolhaY + 30}"
+        x="${paddingX + 15}"
+        y="30"
         font-family="sans-serif"
         font-size="20"
         font-weight="bold"
         fill="#53bdeb"
       >${escaparXml(nomeFinal)}</text>
 
-      ${textoSvg}
+      <g transform="translate(15, 0)">
+        ${textoSvg}
+      </g>
 
       <text
-        x="${horarioX}"
+        x="${horarioX + 15}"
         y="${horarioY}"
         font-family="sans-serif"
         font-size="14"
@@ -551,7 +548,7 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
       >${horario}</text>
 
       <text
-        x="${horarioX + 38}"
+        x="${horarioX + 53}"
         y="${horarioY}"
         font-family="sans-serif"
         font-size="14"
@@ -560,27 +557,39 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
     </svg>
   `
 
+  const tamanhoFoto = 95
   const profileBuffer = await baixarFotoPerfil(sock, participante)
   const fotoCircular = await criarFotoCircular(profileBuffer, tamanhoFoto)
 
-  const composicoes = [{ input: Buffer.from(svgBolha), top: 0, left: 0 }]
-  
-  if (fotoCircular) {
-    composicoes.push({
-      input: fotoCircular,
-      top: fotoY,
-      left: fotoX
-    })
-  }
-
-  return sharp({
+  const fundoTransparente = await sharp({
     create: {
       width: CANVAS,
       height: CANVAS,
       channels: 4,
-      background: { r: 11, g: 20, b: 26, alpha: 1 }
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
     }
+  }).png().toBuffer()
+
+  const alturaTotalBloco = Math.max(tamanhoFoto, alturaBolha)
+  const topoY = Math.round((CANVAS - alturaTotalBloco) / 2)
+
+  const composicoes = []
+
+  if (fotoCircular) {
+    composicoes.push({
+      input: fotoCircular,
+      top: topoY + 15,
+      left: 30
+    })
+  }
+
+  composicoes.push({
+    input: Buffer.from(svgBolha),
+    top: topoY,
+    left: fotoCircular ? 125 : 70
   })
+
+  return sharp(fundoTransparente)
     .composite(composicoes)
     .webp({ quality: 95 })
     .toBuffer()
