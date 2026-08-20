@@ -439,21 +439,6 @@ async function criarFotoCircular(profileBuffer, tamanho) {
     .toBuffer()
 }
 
-async function obterNomeUsuario(sock, jid, participante) {
-  let nome = numero(participante)
-  try {
-    if (ehGrupo(jid)) {
-      const metadata = await sock.groupMetadata(jid)
-      const membro = metadata.participants.find(p => p.id === participante)
-      if (membro?.name) nome = membro.name
-      else if (membro?.notify) nome = membro.notify
-    }
-  } catch (err) {
-    console.log('⚠️ Erro ao buscar nome do usuário no grupo.')
-  }
-  return nome
-}
-
 // ============================================================
 // CRIAR STICKER #FF - SEM NOME E COMPACTO
 // ============================================================
