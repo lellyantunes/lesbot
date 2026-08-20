@@ -369,6 +369,11 @@ async function resetarRanking(sock, jid, remetente, db, campo, nome) {
 }
 
 async function enviarRanking(sock, jid, banco, opcoes) {
+  if (!banco || typeof banco !== 'object') {
+    await sock.sendMessage(jid, { text: opcoes.vazio })
+    return
+  }
+
   const lista = Object.entries(banco)
     .map(([id, data]) => ({ id, valor: Number(data[opcoes.campo] || 0) }))
     .sort((a, b) => b.valor - a.valor)
@@ -439,21 +444,6 @@ async function criarFotoCircular(profileBuffer, tamanho) {
     .toBuffer()
 }
 
-async function obterNomeUsuario(sock, jid, participante) {
-  let nome = numero(participante)
-  try {
-    if (ehGrupo(jid)) {
-      const metadata = await sock.groupMetadata(jid)
-      const membro = metadata.participants.find(p => p.id === participante)
-      if (membro?.name) nome = membro.name
-      else if (membro?.notify) nome = membro.notify
-    }
-  } catch (err) {
-    console.log('⚠️ Erro ao buscar nome do usuário no grupo.')
-  }
-  return nome
-}
-
 // ============================================================
 // CRIAR STICKER #FF - SEM NOME E COM TEXTO CENTRALIZADO NA VERTICAL
 // ============================================================
@@ -481,7 +471,6 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   let textoSvg = ''
   linhas.forEach((linha, index) => {
     if (!linha) return
-    // Ajustado para 30 para o texto descer e não colar na borda superior
     const y = 30 + (index * alturaLinha)
     textoSvg += `
       <text
@@ -886,17 +875,17 @@ async function conectarBot() {
         return
       }
 
-      if (texto.startsWith('#cornoranking') || texto.startsWith('#cornaranking')) {
+      if (texto.startsWith('#cornoranking') || texto.startsWith('#cornaranking') || texto.startsWith('#cornatestranking')) {
         await enviarRanking(sock, jid, db.corna, { campo: 'ultimaPorcentagem', unidade: '%', titulo: '🏆 *RANKING COMPLETO - CORNATEST*', vazio: 'Ainda não tem ninguém no ranking do Cornatest.' })
         return
       }
 
-      if (texto.startsWith('#gostosoranking') || texto.startsWith('#gostosaranking')) {
+      if (texto.startsWith('#gostosoranking') || texto.startsWith('#gostosaranking') || texto.startsWith('#gostosometroranking')) {
         await enviarRanking(sock, jid, db.gostosa, { campo: 'ultimaPorcentagem', unidade: '%', titulo: '🏆 *RANKING COMPLETO - GOSTOSÔMETRO*', vazio: 'Ainda não tem ninguém no ranking do Gostosômetro.' })
         return
       }
 
-      if (texto.startsWith('#bolsoranking') || texto.startsWith('#bolsominiomranking')) {
+      if (texto.startsWith('#bolsoranking') || texto.startsWith('#bolsominiomranking') || texto.startsWith('#bolsominiometroranking')) {
         await enviarRanking(sock, jid, db.bolso, { campo: 'ultimaPorcentagem', unidade: '%', titulo: '🏆 *RANKING COMPLETO - BOLSOMINIOMÊTRO*', vazio: 'Ainda não tem ninguém no ranking do Bolsominiomêtro.' })
         return
       }
