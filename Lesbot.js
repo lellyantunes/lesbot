@@ -204,161 +204,649 @@ async function conectarBot() {
     const agora = Date.now()
     const tresDias = 3 * 24 * 60 * 60 * 1000
 
-    // ========== FIGURINHAS (#f e #ff) ==========
-    if (texto === '#f' || texto === '#ff') {
-      const context = msg.message?.extendedTextMessage?.contextInfo
-      if (!context || !context.quotedMessage) {
+  // ========== FIGURINHAS (#f e #ff) ==========
+if (texto === '#f' || texto === '#ff') {
+  const context = msg.message?.extendedTextMessage?.contextInfo
+
+  if (!context || !context.quotedMessage) {
+    await sock.sendMessage(jid, {
+      text:
+        "Responda uma mensagem com:\n" +
+        "• #f → figurinha normal\n" +
+        "• #ff → mensagem estilo WhatsApp + foto de perfil"
+    })
+    return
+  }
+
+  try {
+    const quoted = context.quotedMessage
+    const participant = context.participant || remetente
+
+    // =========================================================
+    // #FF
+    // MENSAGEM ESTILO WHATSAPP + FOTO DE PERFIL
+    // =========================================================
+    if (texto === '#ff') {
+
+      // -------------------------------------------------------
+      // PEGAR TEXTO DA MENSAGEM CITADA
+      // -------------------------------------------------------
+      let textoCitado =
+        quoted.conversation ||
+        quoted.extendedTextMessage?.text ||
+        quoted.imageMessage?.caption ||
+        quoted.videoMessage?.caption ||
+        quoted.documentMessage?.caption ||
+        quoted.buttonsResponseMessage?.selectedDisplayText ||
+        quoted.listResponseMessage?.title ||
+        ''
+
+      textoCitado = textoCitado.trim()
+
+      if (!textoCitado) {
         await sock.sendMessage(jid, {
-          text: "Responda uma mensagem com:\n• #f → figurinha normal\n• #ff → figurinha com foto de perfil"
+          text:
+            "❌ O #ff só funciona com mensagens que tenham texto " +
+            "ou legenda."
         })
         return
       }
 
+      // -------------------------------------------------------
+      // FOTO DE PERFIL
+      // -------------------------------------------------------
+      let profileBuffer = null
+
       try {
-        const quoted = context.quotedMessage
-        const participant = context.participant
+        const ppUrl = await sock.profilePictureUrl(
+          participant,
+          'image'
+        )
 
-        // ========== #ff (foto de perfil + texto estilo WhatsApp) ==========
-        if (texto === '#ff') {
-          const textoCitado = quoted.conversation || quoted.extendedTextMessage?.text || ""
-          if (!textoCitado) {
-            await sock.sendMessage(jid, { text: "O #ff só funciona com mensagens de *texto*." })
-            return
-          }
+        const response = await axios.get(ppUrl, {
+          responseType: 'arraybuffer',
+          timeout: 10000
+        })
 
-          let profileBuffer = null
-          try {
-            const ppUrl = await sock.profilePictureUrl(participant, 'image')
-            const response = await axios.get(ppUrl, { responseType: 'arraybuffer' })
-            profileBuffer = Buffer.from(response.data)
-          } catch (e) {}
+        profileBuffer = Buffer.from(response.data)
 
-          const linhas = quebrarTexto(textoCitado, 26)
-          const espacamento = 34
-          const alturaBolha = Math.max(110, (linhas.length * espacamento) + 50)
-          const larguraBolha = 355
+      } catch (err) {
+        console.log(
+          '⚠️ Não foi possível obter a foto de perfil.'
+        )
+      }
 
-          let textosSvg = linhas.map((linha, i) => {
-            const y = 42 + (i * espacamento)
-            return `<text x="22" y="${y}" font-family="Arial, sans-serif" font-size="28" fill="#e9edef">${linha.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`
-          }).join('\n')
+      // -------------------------------------------------------
+      // NOME DA PESSOA
+      // -------------------------------------------------------
+      let nome = participant.split('@')[0]
 
-          let stickerBuffer
+      try {
+        if (isGrupo) {
+          const metadata = await sock.groupMetadata(jid)
 
-          if (profileBuffer) {
-            const tamanhoFoto = 130
-            const circuloMask = Buffer.from(`
-              <svg width="${tamanhoFoto}" height="${tamanhoFoto}">
-                <circle cx="${tamanhoFoto/2}" cy="${tamanhoFoto/2}" r="${tamanhoFoto/2}" fill="white"/>
-              </svg>
-            `)
-
-            const fotoCircular = await sharp(profileBuffer)
-              .resize(tamanhoFoto, tamanhoFoto)
-              .composite([{ input: circuloMask, blend: 'dest-in' }])
-              .png()
-              .toBuffer()
-
-            const fundo = await sharp({
-              create: {
-                width: 512,
-                height: 512,
-                channels: 4,
-                background: { r: 11, g: 20, b: 26, alpha: 1 }
-              }
-            }).png().toBuffer()
-
-            const svgBolha = `
-              <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-                <rect x="165" y="40" width="${larguraBolha}" height="${alturaBolha}" rx="20" ry="20" fill="#202c33"/>
-                <path d="M165 70 L145 90 L165 110 Z" fill="#202c33"/>
-                <g transform="translate(185, 40)">
-                  ${textosSvg}
-                </g>
-              </svg>
-            `
-
-            stickerBuffer = await sharp(fundo)
-              .composite([
-                { input: fotoCircular, top: 55, left: 22 },
-                { input: Buffer.from(svgBolha), top: 0, left: 0 }
-              ])
-              .webp({ quality: 95 })
-              .toBuffer()
-          } else {
-            const svg = `
-              <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-                <rect width="100%" height="100%" fill="#0b141a"/>
-                <rect x="70" y="40" width="${larguraBolha + 40}" height="${alturaBolha}" rx="20" ry="20" fill="#202c33"/>
-                <g transform="translate(90, 40)">
-                  ${textosSvg}
-                </g>
-              </svg>
-            `
-            stickerBuffer = await sharp(Buffer.from(svg)).webp({ quality: 95 }).toBuffer()
-          }
-
-          await sock.sendMessage(jid, { sticker: stickerBuffer })
-          return
-        }
-
-        // ========== #f IMAGEM ==========
-        if (quoted.imageMessage) {
-          const quotedMsg = {
-            key: {
-              remoteJid: jid,
-              id: context.stanzaId,
-              fromMe: false,
-              participant: context.participant
-            },
-            message: quoted
-          }
-          const buffer = await downloadMediaMessage(
-            quotedMsg,
-            'buffer',
-            {},
-            { reuploadRequest: sock.updateMediaMessage }
+          const membro = metadata.participants.find(
+            p => p.id === participant
           )
-          const stickerBuffer = await sharp(buffer)
-            .resize(512, 512, {
-              fit: 'contain',
-              background: { r: 0, g: 0, b: 0, alpha: 0 }
-            })
-            .webp({ quality: 80 })
-            .toBuffer()
-          await sock.sendMessage(jid, { sticker: stickerBuffer })
-          return
-        }
 
-        // ========== #f TEXTO ==========
-        const textoCitado = quoted.conversation || quoted.extendedTextMessage?.text || ""
-        if (!textoCitado) {
-          await sock.sendMessage(jid, { text: "Só consigo fazer figurinha de *imagem* ou *texto*." })
-          return
+          if (membro) {
+            nome =
+              membro.name ||
+              membro.notify ||
+              membro.displayName ||
+              participant.split('@')[0]
+          }
         }
-        const linhas = quebrarTexto(textoCitado, 22)
-        const totalLinhas = linhas.length
-        const espacamento = 40
-        const alturaTotal = totalLinhas * espacamento
-        const inicioY = Math.round((512 - alturaTotal) / 2) + 30
-        const textosSvg = linhas.map((linha, i) => {
-          const y = inicioY + (i * espacamento)
-          return `<text x="256" y="${y}" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#000000" text-anchor="middle">${linha.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`
-        }).join('\n')
-        const svg = `
-          <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100%" height="100%" fill="#ffffff"/>
-            ${textosSvg}
+      } catch (err) {
+        // Mantém o número caso não consiga obter o nome
+      }
+
+      nome = String(nome)
+
+      if (nome.length > 24) {
+        nome = nome.substring(0, 24) + '...'
+      }
+
+      // -------------------------------------------------------
+      // HORÁRIO
+      // -------------------------------------------------------
+      const agoraMensagem = new Date()
+
+      const hora = agoraMensagem.toLocaleTimeString(
+        'pt-BR',
+        {
+          hour: '2-digit',
+          minute: '2-digit'
+        }
+      )
+
+      // -------------------------------------------------------
+      // ESCAPAR TEXTO PARA SVG
+      // -------------------------------------------------------
+      function escaparSVG(valor) {
+        return String(valor)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;')
+      }
+
+      // -------------------------------------------------------
+      // QUEBRAR TEXTO
+      // -------------------------------------------------------
+      const linhas = quebrarTexto(
+        textoCitado,
+        29
+      )
+
+      // -------------------------------------------------------
+      // CONFIGURAÇÕES VISUAIS
+      // -------------------------------------------------------
+      const larguraCanvas = 512
+      const alturaCanvas = 512
+
+      const bolhaX = 112
+      const bolhaY = 38
+
+      const bolhaLargura = 370
+
+      const paddingHorizontal = 22
+
+      const fonteTexto = 27
+      const alturaLinha = 35
+
+      // -------------------------------------------------------
+      // MEDIDAS DO TEXTO
+      // -------------------------------------------------------
+      const textoAltura =
+        linhas.length * alturaLinha
+
+      // Espaço para:
+      // nome
+      // texto
+      // horário
+      const alturaBolha = Math.max(
+        112,
+        57 +
+        textoAltura +
+        38
+      )
+
+      // -------------------------------------------------------
+      // FOTO DE PERFIL CIRCULAR
+      // -------------------------------------------------------
+      let fotoCircular = null
+
+      if (profileBuffer) {
+
+        const tamanhoFoto = 82
+
+        const mask = Buffer.from(`
+          <svg
+            width="${tamanhoFoto}"
+            height="${tamanhoFoto}"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="${tamanhoFoto / 2}"
+              cy="${tamanhoFoto / 2}"
+              r="${tamanhoFoto / 2}"
+              fill="white"
+            />
+          </svg>
+        `)
+
+        fotoCircular = await sharp(profileBuffer)
+          .resize(
+            tamanhoFoto,
+            tamanhoFoto,
+            {
+              fit: 'cover',
+              position: 'centre'
+            }
+          )
+          .composite([
+            {
+              input: mask,
+              blend: 'dest-in'
+            }
+          ])
+          .png()
+          .toBuffer()
+      }
+
+      // -------------------------------------------------------
+      // TEXTO PRINCIPAL
+      // -------------------------------------------------------
+      let textosSVG = ''
+
+      linhas.forEach((linha, index) => {
+
+        const y =
+          bolhaY +
+          83 +
+          (index * alturaLinha)
+
+        textosSVG += `
+          <text
+            x="${bolhaX + paddingHorizontal}"
+            y="${y}"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="${fonteTexto}"
+            fill="#e9edef"
+          >
+            ${escaparSVG(linha)}
+          </text>
+        `
+      })
+
+      // -------------------------------------------------------
+      // POSIÇÃO DO HORÁRIO
+      // -------------------------------------------------------
+      const ultimaLinhaY =
+        bolhaY +
+        83 +
+        ((linhas.length - 1) * alturaLinha)
+
+      const horarioY =
+        ultimaLinhaY + 29
+
+      // -------------------------------------------------------
+      // FUNDO DA BOLHA
+      // -------------------------------------------------------
+      const svgBolha = `
+        <svg
+          width="${larguraCanvas}"
+          height="${alturaCanvas}"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+
+          <!-- =================================================
+               SOMBRA SUAVE
+               ================================================= -->
+
+          <rect
+            x="${bolhaX + 2}"
+            y="${bolhaY + 3}"
+            width="${bolhaLargura}"
+            height="${alturaBolha}"
+            rx="20"
+            ry="20"
+            fill="#000000"
+            opacity="0.18"
+          />
+
+          <!-- =================================================
+               BOLHA PRINCIPAL
+               ================================================= -->
+
+          <rect
+            x="${bolhaX}"
+            y="${bolhaY}"
+            width="${bolhaLargura}"
+            height="${alturaBolha}"
+            rx="20"
+            ry="20"
+            fill="#202c33"
+          />
+
+          <!-- =================================================
+               RABINHO DA BOLHA
+               ================================================= -->
+
+          <path
+            d="
+              M ${bolhaX + 1} ${bolhaY + 19}
+              C ${bolhaX - 8} ${bolhaY + 23},
+                ${bolhaX - 12} ${bolhaY + 30},
+                ${bolhaX - 18} ${bolhaY + 36}
+
+              C ${bolhaX - 9} ${bolhaY + 37},
+                ${bolhaX - 3} ${bolhaY + 40},
+                ${bolhaX + 3} ${bolhaY + 45}
+
+              L ${bolhaX + 5} ${bolhaY + 22}
+              Z
+            "
+            fill="#202c33"
+          />
+
+          <!-- =================================================
+               NOME
+               ================================================= -->
+
+          <text
+            x="${bolhaX + paddingHorizontal}"
+            y="${bolhaY + 35}"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="21"
+            font-weight="bold"
+            fill="#25d366"
+          >
+            ${escaparSVG(nome)}
+          </text>
+
+          <!-- =================================================
+               TEXTO
+               ================================================= -->
+
+          ${textosSVG}
+
+          <!-- =================================================
+               HORÁRIO
+               ================================================= -->
+
+          <text
+            x="${bolhaX + bolhaLargura - 82}"
+            y="${horarioY}"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="17"
+            fill="#8696a0"
+          >
+            ${hora}
+          </text>
+
+          <!-- =================================================
+               DOIS CHECKS
+               ================================================= -->
+
+          <text
+            x="${bolhaX + bolhaLargura - 42}"
+            y="${horarioY}"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="18"
+            fill="#53bdeb"
+          >
+            ✓✓
+          </text>
+
+        </svg>
+      `
+
+      // -------------------------------------------------------
+      // FUNDO TRANSPARENTE
+      // -------------------------------------------------------
+      const fundo = sharp({
+        create: {
+          width: larguraCanvas,
+          height: alturaCanvas,
+          channels: 4,
+          background: {
+            r: 0,
+            g: 0,
+            b: 0,
+            alpha: 0
+          }
+        }
+      })
+
+      // -------------------------------------------------------
+      // COMPOSIÇÃO
+      // -------------------------------------------------------
+      const composites = []
+
+      // Bolha
+      composites.push({
+        input: Buffer.from(svgBolha),
+        top: 0,
+        left: 0
+      })
+
+      // -------------------------------------------------------
+      // FOTO DE PERFIL
+      // -------------------------------------------------------
+      if (fotoCircular) {
+
+        composites.push({
+          input: fotoCircular,
+          top: bolhaY,
+          left: 22
+        })
+
+      } else {
+
+        // -----------------------------------------------------
+        // CASO NÃO TENHA FOTO
+        // CRIA CÍRCULO COM INICIAIS
+        // -----------------------------------------------------
+
+        const inicial =
+          nome
+            .trim()
+            .charAt(0)
+            .toUpperCase() || '?'
+
+        const avatarSVG = `
+          <svg
+            width="82"
+            height="82"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+
+            <circle
+              cx="41"
+              cy="41"
+              r="41"
+              fill="#54656f"
+            />
+
+            <text
+              x="41"
+              y="51"
+              text-anchor="middle"
+              font-family="Arial, Helvetica, sans-serif"
+              font-size="34"
+              font-weight="bold"
+              fill="#ffffff"
+            >
+              ${escaparSVG(inicial)}
+            </text>
+
           </svg>
         `
-        const stickerBuffer = await sharp(Buffer.from(svg)).webp({ quality: 90 }).toBuffer()
-        await sock.sendMessage(jid, { sticker: stickerBuffer })
-      } catch (err) {
-        console.error("Erro na figurinha:", err)
-        await sock.sendMessage(jid, { text: "❌ Erro ao criar a figurinha." })
+
+        composites.push({
+          input: Buffer.from(avatarSVG),
+          top: bolhaY,
+          left: 22
+        })
       }
+
+      // -------------------------------------------------------
+      // GERAR FIGURINHA
+      // -------------------------------------------------------
+      const stickerBuffer = await fundo
+        .composite(composites)
+        .webp({
+          quality: 95
+        })
+        .toBuffer()
+
+      // -------------------------------------------------------
+      // ENVIAR
+      // -------------------------------------------------------
+      await sock.sendMessage(jid, {
+        sticker: stickerBuffer
+      })
+
       return
     }
+
+    // =========================================================
+    // #F → IMAGEM
+    // =========================================================
+    if (quoted.imageMessage) {
+
+      const quotedMsg = {
+        key: {
+          remoteJid: jid,
+          id: context.stanzaId,
+          fromMe: false,
+          participant: context.participant
+        },
+        message: quoted
+      }
+
+      const buffer = await downloadMediaMessage(
+        quotedMsg,
+        'buffer',
+        {},
+        {
+          reuploadRequest: sock.updateMediaMessage
+        }
+      )
+
+      const stickerBuffer = await sharp(buffer)
+        .resize(
+          512,
+          512,
+          {
+            fit: 'contain',
+            background: {
+              r: 0,
+              g: 0,
+              b: 0,
+              alpha: 0
+            }
+          }
+        )
+        .webp({
+          quality: 80
+        })
+        .toBuffer()
+
+      await sock.sendMessage(jid, {
+        sticker: stickerBuffer
+      })
+
+      return
+    }
+
+    // =========================================================
+    // #F → TEXTO
+    // =========================================================
+    const textoCitado =
+      quoted.conversation ||
+      quoted.extendedTextMessage?.text ||
+      quoted.imageMessage?.caption ||
+      quoted.videoMessage?.caption ||
+      quoted.documentMessage?.caption ||
+      ''
+
+    if (!textoCitado) {
+
+      await sock.sendMessage(jid, {
+        text:
+          "❌ Só consigo fazer figurinha de imagem ou texto."
+      })
+
+      return
+    }
+
+    // ---------------------------------------------------------
+    // QUEBRAR TEXTO
+    // ---------------------------------------------------------
+    const linhas = quebrarTexto(
+      textoCitado,
+      22
+    )
+
+    const espacamento = 40
+
+    const alturaTotal =
+      linhas.length * espacamento
+
+    const inicioY =
+      Math.round(
+        (512 - alturaTotal) / 2
+      ) + 30
+
+    // ---------------------------------------------------------
+    // TEXTO SVG
+    // ---------------------------------------------------------
+    const textosSVG = linhas
+      .map((linha, i) => {
+
+        const y =
+          inicioY +
+          (i * espacamento)
+
+        const textoSeguro = linha
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+
+        return `
+          <text
+            x="256"
+            y="${y}"
+            font-family="Arial, sans-serif"
+            font-size="32"
+            font-weight="bold"
+            fill="#000000"
+            text-anchor="middle"
+          >
+            ${textoSeguro}
+          </text>
+        `
+      })
+      .join('\n')
+
+    // ---------------------------------------------------------
+    // SVG FINAL
+    // ---------------------------------------------------------
+    const svgTexto = `
+      <svg
+        width="512"
+        height="512"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+
+        <rect
+          width="100%"
+          height="100%"
+          fill="#ffffff"
+        />
+
+        ${textosSVG}
+
+      </svg>
+    `
+
+    // ---------------------------------------------------------
+    // GERAR FIGURINHA
+    // ---------------------------------------------------------
+    const stickerBuffer = await sharp(
+      Buffer.from(svgTexto)
+    )
+      .webp({
+        quality: 90
+      })
+      .toBuffer()
+
+    // ---------------------------------------------------------
+    // ENVIAR
+    // ---------------------------------------------------------
+    await sock.sendMessage(jid, {
+      sticker: stickerBuffer
+    })
+
+  } catch (err) {
+
+    console.error(
+      "❌ Erro na figurinha:",
+      err
+    )
+
+    await sock.sendMessage(jid, {
+      text:
+        "❌ Erro ao criar a figurinha."
+    })
+  }
+
+  return
+}
 
     // ========== RESETS ==========
     if (texto === '#sapareset') {
