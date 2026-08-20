@@ -7,7 +7,7 @@ const axios = require('axios')
 const sharp = require('sharp')
 
 // ====================== DONO DO BOT ======================
-const DONO = "5511999999999@s.whatsapp.net" // ← TROQUE PELO SEU NÚMERO
+const DONO = "5511911831463@s.whatsapp.net" // ← TROQUE PELO SEU NÚMERO
 
 // ====================== CANTADAS ======================
 const cantadas = [
