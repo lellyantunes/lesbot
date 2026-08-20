@@ -1,4 +1,10 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys')
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  DisconnectReason,
+  downloadMediaMessage
+} = require('@whiskeysockets/baileys')
+
 const { Boom } = require('@hapi/boom')
 const qrcode = require('qrcode-terminal')
 const fs = require('fs')
@@ -7,7 +13,7 @@ const axios = require('axios')
 const sharp = require('sharp')
 
 // ====================== DONO DO BOT ======================
-const DONO = "5511911831463@s.whatsapp.net" // ← TROQUE PELO SEU NÚMERO
+const DONO = "5511911831463@s.whatsapp.net"
 
 // ====================== CANTADAS ======================
 const cantadas = [
@@ -117,913 +123,1589 @@ const DB_FILE = path.join(__dirname, 'bot_db.json')
 
 function carregarDB() {
   if (!fs.existsSync(DB_FILE)) {
-    return { sapa: {}, xota: {}, corna: {}, gostosa: {}, bolso: {} }
+    return {
+      sapa: {},
+      xota: {},
+      corna: {},
+      gostosa: {},
+      bolso: {}
+    }
   }
+
   const data = JSON.parse(fs.readFileSync(DB_FILE))
+
+  if (!data.sapa) data.sapa = {}
+  if (!data.xota) data.xota = {}
   if (!data.corna) data.corna = {}
   if (!data.gostosa) data.gostosa = {}
   if (!data.bolso) data.bolso = {}
+
   return data
 }
 
 function salvarDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2))
+  fs.writeFileSync(
+    DB_FILE,
+    JSON.stringify(db, null, 2)
+  )
 }
 
 // ====================== FUNÇÕES AUXILIARES ======================
 function criarBarra(valor, max = 100, tamanho = 10) {
   const cheios = Math.round((valor / max) * tamanho)
-  return "🟩".repeat(cheios) + "⬜".repeat(tamanho - cheios)
+
+  return (
+    "🟩".repeat(cheios) +
+    "⬜".repeat(tamanho - cheios)
+  )
 }
 
 function criarBarraVermelha(valor, max = 100, tamanho = 10) {
   const cheios = Math.round((valor / max) * tamanho)
-  return "🟥".repeat(cheios) + "⬜".repeat(tamanho - cheios)
+
+  return (
+    "🟥".repeat(cheios) +
+    "⬜".repeat(tamanho - cheios)
+  )
 }
 
 function quebrarTexto(texto, maxChars = 22) {
   const palavras = texto.split(' ')
   const linhas = []
+
   let linhaAtual = ''
+
   for (const palavra of palavras) {
-    if ((linhaAtual + ' ' + palavra).trim().length <= maxChars) {
-      linhaAtual = (linhaAtual + ' ' + palavra).trim()
+    if (
+      (linhaAtual + ' ' + palavra)
+        .trim()
+        .length <= maxChars
+    ) {
+      linhaAtual =
+        (linhaAtual + ' ' + palavra).trim()
     } else {
-      if (linhaAtual) linhas.push(linhaAtual)
+      if (linhaAtual) {
+        linhas.push(linhaAtual)
+      }
+
       linhaAtual = palavra
     }
   }
-  if (linhaAtual) linhas.push(linhaAtual)
+
+  if (linhaAtual) {
+    linhas.push(linhaAtual)
+  }
+
   return linhas.slice(0, 8)
+}
+
+// ====================== EXTRAIR TEXTO DE MENSAGEM ======================
+// Essa função é usada tanto no #f quanto no #ff.
+function extrairTextoMensagem(message) {
+  if (!message) return ''
+
+  // Texto normal
+  if (message.conversation) {
+    return message.conversation
+  }
+
+  // Texto expandido
+  if (message.extendedTextMessage?.text) {
+    return message.extendedTextMessage.text
+  }
+
+  // Mensagem efêmera
+  if (message.ephemeralMessage?.message) {
+    return extrairTextoMensagem(
+      message.ephemeralMessage.message
+    )
+  }
+
+  // View once
+  if (message.viewOnceMessage?.message) {
+    return extrairTextoMensagem(
+      message.viewOnceMessage.message
+    )
+  }
+
+  // View once V2
+  if (message.viewOnceMessageV2?.message) {
+    return extrairTextoMensagem(
+      message.viewOnceMessageV2.message
+    )
+  }
+
+  // View once V2 Extension
+  if (message.viewOnceMessageV2Extension?.message) {
+    return extrairTextoMensagem(
+      message.viewOnceMessageV2Extension.message
+    )
+  }
+
+  return ''
+}
+
+// ====================== ESCAPAR XML ======================
+function escaparXml(texto) {
+  return String(texto)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+// ====================== QUEBRAR TEXTO DO #FF ======================
+function quebrarTextoFF(texto, maxChars = 27) {
+  const palavras = texto
+    .replace(/\r/g, '')
+    .split(' ')
+
+  const linhas = []
+
+  let linhaAtual = ''
+
+  for (const palavra of palavras) {
+    // Preserva quebra de linha
+    if (palavra.includes('\n')) {
+      const partes = palavra.split('\n')
+
+      for (let i = 0; i < partes.length; i++) {
+        const parte = partes[i]
+
+        if (parte) {
+          const teste = linhaAtual
+            ? `${linhaAtual} ${parte}`
+            : parte
+
+          if (teste.length <= maxChars) {
+            linhaAtual = teste
+          } else {
+            if (linhaAtual) {
+              linhas.push(linhaAtual)
+            }
+
+            linhaAtual = parte
+          }
+        }
+
+        if (i < partes.length - 1) {
+          if (linhaAtual) {
+            linhas.push(linhaAtual)
+          }
+
+          linhas.push('')
+          linhaAtual = ''
+        }
+      }
+
+      continue
+    }
+
+    const teste = linhaAtual
+      ? `${linhaAtual} ${palavra}`
+      : palavra
+
+    if (teste.length <= maxChars) {
+      linhaAtual = teste
+    } else {
+      if (linhaAtual) {
+        linhas.push(linhaAtual)
+      }
+
+      // Palavra muito comprida
+      if (palavra.length > maxChars) {
+        let restante = palavra
+
+        while (restante.length > maxChars) {
+          linhas.push(
+            restante.substring(0, maxChars)
+          )
+
+          restante = restante.substring(maxChars)
+        }
+
+        linhaAtual = restante
+      } else {
+        linhaAtual = palavra
+      }
+    }
+  }
+
+  if (linhaAtual) {
+    linhas.push(linhaAtual)
+  }
+
+  return linhas
 }
 
 // ====================== CONEXÃO DO BOT ======================
 async function conectarBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth')
+  const {
+    state,
+    saveCreds
+  } = await useMultiFileAuthState('./auth')
+
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: false,
+    printQRInTerminal: false
   })
 
-  sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update
-    if (qr) {
-      console.log('Escaneie o QR Code abaixo:')
-      qrcode.generate(qr, { small: true })
-    }
-    if (connection === 'open') {
-      console.log('✅ Bot conectado com sucesso!')
-    }
-    if (connection === 'close') {
-      const deveReconectar = (lastDisconnect?.error instanceof Boom)
-        ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
-        : true
-      console.log('Conexão fechada. Reconectando?', deveReconectar)
-      if (deveReconectar) {
-        conectarBot()
-      } else {
-        console.log('Deslogado. Delete a pasta "auth" e rode novamente.')
+  sock.ev.on(
+    'connection.update',
+    (update) => {
+      const {
+        connection,
+        lastDisconnect,
+        qr
+      } = update
+
+      if (qr) {
+        console.log(
+          'Escaneie o QR Code abaixo:'
+        )
+
+        qrcode.generate(
+          qr,
+          { small: true }
+        )
+      }
+
+      if (connection === 'open') {
+        console.log(
+          '✅ Bot conectado com sucesso!'
+        )
+      }
+
+      if (connection === 'close') {
+        const deveReconectar =
+          (lastDisconnect?.error instanceof Boom)
+            ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
+            : true
+
+        console.log(
+          'Conexão fechada. Reconectando?',
+          deveReconectar
+        )
+
+        if (deveReconectar) {
+          conectarBot()
+        } else {
+          console.log(
+            'Deslogado. Delete a pasta "auth" e rode novamente.'
+          )
+        }
       }
     }
-  })
+  )
 
-  sock.ev.on('creds.update', saveCreds)
+  sock.ev.on(
+    'creds.update',
+    saveCreds
+  )
 
   // ====================== COMANDOS ======================
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0]
-    if (!msg.message || msg.key.fromMe) return
+  sock.ev.on(
+    'messages.upsert',
+    async ({ messages }) => {
 
-    const textoOriginal = msg.message.conversation || msg.message.extendedTextMessage?.text || ""
-    const texto = textoOriginal.trim().toLowerCase()
-    const jid = msg.key.remoteJid
-    const mencoes = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
-    const isGrupo = jid.endsWith('@g.us')
-    const remetente = msg.key.participant || msg.key.remoteJid
-    const db = carregarDB()
-    const agora = Date.now()
-    const tresDias = 3 * 24 * 60 * 60 * 1000
+      const msg = messages[0]
 
-  // ========== FIGURINHAS (#f e #ff) ==========
-if (texto === '#f' || texto === '#ff') {
-  const context = msg.message?.extendedTextMessage?.contextInfo
+      if (!msg.message || msg.key.fromMe) {
+        return
+      }
 
-  if (!context || !context.quotedMessage) {
-    await sock.sendMessage(jid, {
-      text:
-        "Responda uma mensagem com:\n" +
-        "• #f → figurinha normal\n" +
-        "• #ff → mensagem estilo WhatsApp + foto de perfil"
-    })
-    return
-  }
-
-  try {
-    const quoted = context.quotedMessage
-    const participant = context.participant || remetente
-
-    // =========================================================
-    // #FF
-    // MENSAGEM ESTILO WHATSAPP + FOTO DE PERFIL
-    // =========================================================
-    if (texto === '#ff') {
-
-      // -------------------------------------------------------
-      // PEGAR TEXTO DA MENSAGEM CITADA
-      // -------------------------------------------------------
-      let textoCitado =
-        quoted.conversation ||
-        quoted.extendedTextMessage?.text ||
-        quoted.imageMessage?.caption ||
-        quoted.videoMessage?.caption ||
-        quoted.documentMessage?.caption ||
-        quoted.buttonsResponseMessage?.selectedDisplayText ||
-        quoted.listResponseMessage?.title ||
+      const textoOriginal =
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
         ''
 
-      textoCitado = textoCitado.trim()
+      const texto =
+        textoOriginal
+          .trim()
+          .toLowerCase()
 
-      if (!textoCitado) {
-        await sock.sendMessage(jid, {
-          text:
-            "❌ O #ff só funciona com mensagens que tenham texto " +
-            "ou legenda."
-        })
-        return
-      }
+      const jid =
+        msg.key.remoteJid
 
-      // -------------------------------------------------------
-      // FOTO DE PERFIL
-      // -------------------------------------------------------
-      let profileBuffer = null
+      const mencoes =
+        msg.message
+          ?.extendedTextMessage
+          ?.contextInfo
+          ?.mentionedJid ||
+        []
 
-      try {
-        const ppUrl = await sock.profilePictureUrl(
-          participant,
-          'image'
-        )
+      const isGrupo =
+        jid.endsWith('@g.us')
 
-        const response = await axios.get(ppUrl, {
-          responseType: 'arraybuffer',
-          timeout: 10000
-        })
+      const remetente =
+        msg.key.participant ||
+        msg.key.remoteJid
 
-        profileBuffer = Buffer.from(response.data)
+      const db = carregarDB()
 
-      } catch (err) {
-        console.log(
-          '⚠️ Não foi possível obter a foto de perfil.'
-        )
-      }
+      const agora = Date.now()
 
-      // -------------------------------------------------------
-      // NOME DA PESSOA
-      // -------------------------------------------------------
-      let nome = participant.split('@')[0]
+      const tresDias =
+        3 * 24 * 60 * 60 * 1000
 
-      try {
-        if (isGrupo) {
-          const metadata = await sock.groupMetadata(jid)
+      // ============================================================
+      // FIGURINHAS
+      // #f  = imagem ou texto
+      // #ff = texto estilo mensagem do WhatsApp
+      // ============================================================
+      if (
+        texto === '#f' ||
+        texto === '#ff'
+      ) {
 
-          const membro = metadata.participants.find(
-            p => p.id === participant
-          )
+        const context =
+          msg.message
+            ?.extendedTextMessage
+            ?.contextInfo
 
-          if (membro) {
-            nome =
-              membro.name ||
-              membro.notify ||
-              membro.displayName ||
-              participant.split('@')[0]
-          }
-        }
-      } catch (err) {
-        // Mantém o número caso não consiga obter o nome
-      }
-
-      nome = String(nome)
-
-      if (nome.length > 24) {
-        nome = nome.substring(0, 24) + '...'
-      }
-
-      // -------------------------------------------------------
-      // HORÁRIO
-      // -------------------------------------------------------
-      const agoraMensagem = new Date()
-
-      const hora = agoraMensagem.toLocaleTimeString(
-        'pt-BR',
-        {
-          hour: '2-digit',
-          minute: '2-digit'
-        }
-      )
-
-      // -------------------------------------------------------
-      // ESCAPAR TEXTO PARA SVG
-      // -------------------------------------------------------
-      function escaparSVG(valor) {
-        return String(valor)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&apos;')
-      }
-
-      // -------------------------------------------------------
-      // QUEBRAR TEXTO
-      // -------------------------------------------------------
-      const linhas = quebrarTexto(
-        textoCitado,
-        29
-      )
-
-      // -------------------------------------------------------
-      // CONFIGURAÇÕES VISUAIS
-      // -------------------------------------------------------
-      const larguraCanvas = 512
-      const alturaCanvas = 512
-
-      const bolhaX = 112
-      const bolhaY = 38
-
-      const bolhaLargura = 370
-
-      const paddingHorizontal = 22
-
-      const fonteTexto = 27
-      const alturaLinha = 35
-
-      // -------------------------------------------------------
-      // MEDIDAS DO TEXTO
-      // -------------------------------------------------------
-      const textoAltura =
-        linhas.length * alturaLinha
-
-      // Espaço para:
-      // nome
-      // texto
-      // horário
-      const alturaBolha = Math.max(
-        112,
-        57 +
-        textoAltura +
-        38
-      )
-
-      // -------------------------------------------------------
-      // FOTO DE PERFIL CIRCULAR
-      // -------------------------------------------------------
-      let fotoCircular = null
-
-      if (profileBuffer) {
-
-        const tamanhoFoto = 82
-
-        const mask = Buffer.from(`
-          <svg
-            width="${tamanhoFoto}"
-            height="${tamanhoFoto}"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <circle
-              cx="${tamanhoFoto / 2}"
-              cy="${tamanhoFoto / 2}"
-              r="${tamanhoFoto / 2}"
-              fill="white"
-            />
-          </svg>
-        `)
-
-        fotoCircular = await sharp(profileBuffer)
-          .resize(
-            tamanhoFoto,
-            tamanhoFoto,
+        if (
+          !context ||
+          !context.quotedMessage
+        ) {
+          await sock.sendMessage(
+            jid,
             {
-              fit: 'cover',
-              position: 'centre'
+              text:
+                "❌ Responda uma mensagem para criar a figurinha.\n\n" +
+                "• #f → figurinha normal\n" +
+                "• #ff → mensagem estilo WhatsApp com foto de perfil"
             }
           )
-          .composite([
-            {
-              input: mask,
-              blend: 'dest-in'
-            }
-          ])
-          .png()
-          .toBuffer()
-      }
 
-      // -------------------------------------------------------
-      // TEXTO PRINCIPAL
-      // -------------------------------------------------------
-      let textosSVG = ''
-
-      linhas.forEach((linha, index) => {
-
-        const y =
-          bolhaY +
-          83 +
-          (index * alturaLinha)
-
-        textosSVG += `
-          <text
-            x="${bolhaX + paddingHorizontal}"
-            y="${y}"
-            font-family="Arial, Helvetica, sans-serif"
-            font-size="${fonteTexto}"
-            fill="#e9edef"
-          >
-            ${escaparSVG(linha)}
-          </text>
-        `
-      })
-
-      // -------------------------------------------------------
-      // POSIÇÃO DO HORÁRIO
-      // -------------------------------------------------------
-      const ultimaLinhaY =
-        bolhaY +
-        83 +
-        ((linhas.length - 1) * alturaLinha)
-
-      const horarioY =
-        ultimaLinhaY + 29
-
-      // -------------------------------------------------------
-      // FUNDO DA BOLHA
-      // -------------------------------------------------------
-      const svgBolha = `
-        <svg
-          width="${larguraCanvas}"
-          height="${alturaCanvas}"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-
-          <!-- =================================================
-               SOMBRA SUAVE
-               ================================================= -->
-
-          <rect
-            x="${bolhaX + 2}"
-            y="${bolhaY + 3}"
-            width="${bolhaLargura}"
-            height="${alturaBolha}"
-            rx="20"
-            ry="20"
-            fill="#000000"
-            opacity="0.18"
-          />
-
-          <!-- =================================================
-               BOLHA PRINCIPAL
-               ================================================= -->
-
-          <rect
-            x="${bolhaX}"
-            y="${bolhaY}"
-            width="${bolhaLargura}"
-            height="${alturaBolha}"
-            rx="20"
-            ry="20"
-            fill="#202c33"
-          />
-
-          <!-- =================================================
-               RABINHO DA BOLHA
-               ================================================= -->
-
-          <path
-            d="
-              M ${bolhaX + 1} ${bolhaY + 19}
-              C ${bolhaX - 8} ${bolhaY + 23},
-                ${bolhaX - 12} ${bolhaY + 30},
-                ${bolhaX - 18} ${bolhaY + 36}
-
-              C ${bolhaX - 9} ${bolhaY + 37},
-                ${bolhaX - 3} ${bolhaY + 40},
-                ${bolhaX + 3} ${bolhaY + 45}
-
-              L ${bolhaX + 5} ${bolhaY + 22}
-              Z
-            "
-            fill="#202c33"
-          />
-
-          <!-- =================================================
-               NOME
-               ================================================= -->
-
-          <text
-            x="${bolhaX + paddingHorizontal}"
-            y="${bolhaY + 35}"
-            font-family="Arial, Helvetica, sans-serif"
-            font-size="21"
-            font-weight="bold"
-            fill="#25d366"
-          >
-            ${escaparSVG(nome)}
-          </text>
-
-          <!-- =================================================
-               TEXTO
-               ================================================= -->
-
-          ${textosSVG}
-
-          <!-- =================================================
-               HORÁRIO
-               ================================================= -->
-
-          <text
-            x="${bolhaX + bolhaLargura - 82}"
-            y="${horarioY}"
-            font-family="Arial, Helvetica, sans-serif"
-            font-size="17"
-            fill="#8696a0"
-          >
-            ${hora}
-          </text>
-
-          <!-- =================================================
-               DOIS CHECKS
-               ================================================= -->
-
-          <text
-            x="${bolhaX + bolhaLargura - 42}"
-            y="${horarioY}"
-            font-family="Arial, Helvetica, sans-serif"
-            font-size="18"
-            fill="#53bdeb"
-          >
-            ✓✓
-          </text>
-
-        </svg>
-      `
-
-      // -------------------------------------------------------
-      // FUNDO TRANSPARENTE
-      // -------------------------------------------------------
-      const fundo = sharp({
-        create: {
-          width: larguraCanvas,
-          height: alturaCanvas,
-          channels: 4,
-          background: {
-            r: 0,
-            g: 0,
-            b: 0,
-            alpha: 0
-          }
+          return
         }
-      })
 
-      // -------------------------------------------------------
-      // COMPOSIÇÃO
-      // -------------------------------------------------------
-      const composites = []
+        try {
 
-      // Bolha
-      composites.push({
-        input: Buffer.from(svgBolha),
-        top: 0,
-        left: 0
-      })
+          const quoted =
+            context.quotedMessage
 
-      // -------------------------------------------------------
-      // FOTO DE PERFIL
-      // -------------------------------------------------------
-      if (fotoCircular) {
+          // ========================================================
+          // PARTICIPANTE DA MENSAGEM ORIGINAL
+          // ========================================================
+          const participante =
+            context.participant ||
+            context.remoteJid ||
+            jid
 
-        composites.push({
-          input: fotoCircular,
-          top: bolhaY,
-          left: 22
-        })
+          // ========================================================
+          // #FF
+          // ========================================================
+          if (texto === '#ff') {
 
-      } else {
+            const textoCitado =
+              extrairTextoMensagem(quoted)
 
-        // -----------------------------------------------------
-        // CASO NÃO TENHA FOTO
-        // CRIA CÍRCULO COM INICIAIS
-        // -----------------------------------------------------
+            console.log(
+              '================================'
+            )
 
-        const inicial =
-          nome
-            .trim()
-            .charAt(0)
-            .toUpperCase() || '?'
+            console.log(
+              '📩 Texto citado:',
+              textoCitado
+            )
 
-        const avatarSVG = `
-          <svg
-            width="82"
-            height="82"
-            xmlns="http://www.w3.org/2000/svg"
-          >
+            console.log(
+              '👤 Participante:',
+              participante
+            )
 
-            <circle
-              cx="41"
-              cy="41"
-              r="41"
-              fill="#54656f"
-            />
+            console.log(
+              '================================'
+            )
 
-            <text
-              x="41"
-              y="51"
-              text-anchor="middle"
-              font-family="Arial, Helvetica, sans-serif"
-              font-size="34"
-              font-weight="bold"
-              fill="#ffffff"
+            if (!textoCitado) {
+              await sock.sendMessage(
+                jid,
+                {
+                  text:
+                    "❌ Não consegui encontrar o texto da mensagem.\n\n" +
+                    "Responda diretamente uma mensagem de texto para usar o #ff."
+                }
+              )
+
+              return
+            }
+
+            // ======================================================
+            // NOME
+            // ======================================================
+            let nomeUsuario =
+              participante.split('@')[0]
+
+            try {
+
+              if (isGrupo) {
+
+                const metadata =
+                  await sock.groupMetadata(jid)
+
+                const membro =
+                  metadata.participants.find(
+                    p => p.id === participante
+                  )
+
+                if (membro?.name) {
+                  nomeUsuario =
+                    membro.name
+                } else if (membro?.notify) {
+                  nomeUsuario =
+                    membro.notify
+                }
+              }
+
+            } catch (e) {
+              console.log(
+                'Não consegui obter o nome do usuário.'
+              )
+            }
+
+            // ======================================================
+            // FOTO DE PERFIL
+            // ======================================================
+            let profileBuffer = null
+
+            try {
+
+              const ppUrl =
+                await sock.profilePictureUrl(
+                  participante,
+                  'image'
+                )
+
+              const response =
+                await axios.get(
+                  ppUrl,
+                  {
+                    responseType: 'arraybuffer',
+                    timeout: 10000
+                  }
+                )
+
+              profileBuffer =
+                Buffer.from(
+                  response.data
+                )
+
+            } catch (e) {
+
+              console.log(
+                '⚠️ Não foi possível obter a foto de perfil.'
+              )
+            }
+
+            // ======================================================
+            // DIMENSÕES
+            // ======================================================
+            const CANVAS = 512
+
+            const bolhaX = 88
+            const bolhaY = 92
+
+            const margemDireita = 20
+
+            const larguraBolha =
+              CANVAS -
+              bolhaX -
+              margemDireita
+
+            const paddingX = 20
+
+            const alturaCabecalho = 45
+            const alturaLinha = 31
+
+            let linhas =
+              quebrarTextoFF(
+                textoCitado,
+                26
+              )
+
+            // Limite visual
+            linhas =
+              linhas.slice(0, 10)
+
+            // Se passar do limite
+            if (
+              textoCitado.length > 250
+            ) {
+              linhas[linhas.length - 1] =
+                '...'
+            }
+
+            const alturaTexto =
+              linhas.length *
+              alturaLinha
+
+            const alturaBolha =
+              alturaCabecalho +
+              alturaTexto +
+              45
+
+            // ======================================================
+            // HORÁRIO
+            // ======================================================
+            const dataAtual =
+              new Date()
+
+            const hora =
+              dataAtual
+                .getHours()
+                .toString()
+                .padStart(2, '0')
+
+            const minuto =
+              dataAtual
+                .getMinutes()
+                .toString()
+                .padStart(2, '0')
+
+            const horario =
+              `${hora}:${minuto}`
+
+            // ======================================================
+            // NOME ESCAPADO
+            // ======================================================
+            const nomeFinal =
+              nomeUsuario.length > 22
+                ? nomeUsuario.substring(
+                    0,
+                    22
+                  ) + '...'
+                : nomeUsuario
+
+            // ======================================================
+            // TEXTO DA MENSAGEM
+            // ======================================================
+            let textoSvg = ''
+
+            linhas.forEach(
+              (linha, index) => {
+
+                if (!linha) {
+                  return
+                }
+
+                const y =
+                  bolhaY +
+                  alturaCabecalho +
+                  23 +
+                  (index * alturaLinha)
+
+                textoSvg += `
+                  <text
+                    x="${bolhaX + paddingX}"
+                    y="${y}"
+                    font-family="Arial, Helvetica, sans-serif"
+                    font-size="25"
+                    font-weight="400"
+                    fill="#e9edef"
+                  >${escaparXml(linha)}</text>
+                `
+              }
+            )
+
+            // ======================================================
+            // HORÁRIO
+            // ======================================================
+            const horarioX =
+              bolhaX +
+              larguraBolha -
+              78
+
+            const horarioY =
+              bolhaY +
+              alturaBolha -
+              12
+
+            // ======================================================
+            // SVG DA BOLHA
+            // ======================================================
+            const svgBolha = `
+              <svg
+                width="${CANVAS}"
+                height="${CANVAS}"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+
+                <!-- BOLHA -->
+                <rect
+                  x="${bolhaX}"
+                  y="${bolhaY}"
+                  width="${larguraBolha}"
+                  height="${alturaBolha}"
+                  rx="16"
+                  ry="16"
+                  fill="#202c33"
+                />
+
+                <!-- BICO -->
+                <path
+                  d="
+                    M ${bolhaX} ${bolhaY + 14}
+                    C ${bolhaX - 8} ${bolhaY + 20},
+                      ${bolhaX - 12} ${bolhaY + 32},
+                      ${bolhaX - 2} ${bolhaY + 42}
+                    L ${bolhaX + 10} ${bolhaY + 48}
+                    L ${bolhaX + 12} ${bolhaY + 18}
+                    Z
+                  "
+                  fill="#202c33"
+                />
+
+                <!-- NOME -->
+                <text
+                  x="${bolhaX + paddingX}"
+                  y="${bolhaY + 30}"
+                  font-family="Arial, Helvetica, sans-serif"
+                  font-size="20"
+                  font-weight="700"
+                  fill="#53bdeb"
+                >${escaparXml(nomeFinal)}</text>
+
+                <!-- TEXTO -->
+                ${textoSvg}
+
+                <!-- HORÁRIO -->
+                <text
+                  x="${horarioX}"
+                  y="${horarioY}"
+                  font-family="Arial, Helvetica, sans-serif"
+                  font-size="15"
+                  fill="#8696a0"
+                >${horario}</text>
+
+                <!-- CHECKS -->
+                <text
+                  x="${horarioX + 30}"
+                  y="${horarioY}"
+                  font-family="Arial, Helvetica, sans-serif"
+                  font-size="15"
+                  fill="#53bdeb"
+                >✓✓</text>
+
+              </svg>
+            `
+
+            // ======================================================
+            // FOTO CIRCULAR
+            // ======================================================
+            let fotoCircular = null
+
+            if (profileBuffer) {
+
+              const tamanhoFoto = 116
+
+              const mascara =
+                Buffer.from(`
+                  <svg
+                    width="${tamanhoFoto}"
+                    height="${tamanhoFoto}"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <circle
+                      cx="${tamanhoFoto / 2}"
+                      cy="${tamanhoFoto / 2}"
+                      r="${tamanhoFoto / 2}"
+                      fill="white"
+                    />
+                  </svg>
+                `)
+
+              fotoCircular =
+                await sharp(
+                  profileBuffer
+                )
+                  .resize(
+                    tamanhoFoto,
+                    tamanhoFoto,
+                    {
+                      fit: 'cover'
+                    }
+                  )
+                  .composite([
+                    {
+                      input: mascara,
+                      blend: 'dest-in'
+                    }
+                  ])
+                  .png()
+                  .toBuffer()
+            }
+
+            // ======================================================
+            // FUNDO
+            // ======================================================
+            const fundo =
+              await sharp({
+                create: {
+                  width: CANVAS,
+                  height: CANVAS,
+                  channels: 4,
+                  background: {
+                    r: 11,
+                    g: 20,
+                    b: 26,
+                    alpha: 1
+                  }
+                }
+              })
+                .png()
+                .toBuffer()
+
+            // ======================================================
+            // COMPOSIÇÃO
+            // ======================================================
+            const composicoes = [
+              {
+                input:
+                  Buffer.from(svgBolha),
+                top: 0,
+                left: 0
+              }
+            ]
+
+            // Foto posicionada à esquerda
+            if (fotoCircular) {
+
+              composicoes.push({
+                input: fotoCircular,
+                top: bolhaY - 18,
+                left: 12
+              })
+            }
+
+            // ======================================================
+            // GERAR WEBP
+            // ======================================================
+            const stickerBuffer =
+              await sharp(fundo)
+                .composite(composicoes)
+                .webp({
+                  quality: 95
+                })
+                .toBuffer()
+
+            // ======================================================
+            // ENVIAR
+            // ======================================================
+            await sock.sendMessage(
+              jid,
+              {
+                sticker: stickerBuffer
+              }
+            )
+
+            return
+          }
+
+          // ========================================================
+          // #F - IMAGEM
+          // ========================================================
+          if (quoted.imageMessage) {
+
+            const quotedMsg = {
+              key: {
+                remoteJid: jid,
+                id: context.stanzaId,
+                fromMe: false,
+                participant:
+                  context.participant
+              },
+              message: quoted
+            }
+
+            const buffer =
+              await downloadMediaMessage(
+                quotedMsg,
+                'buffer',
+                {},
+                {
+                  reuploadRequest:
+                    sock.updateMediaMessage
+                }
+              )
+
+            const stickerBuffer =
+              await sharp(buffer)
+                .resize(
+                  512,
+                  512,
+                  {
+                    fit: 'contain',
+                    background: {
+                      r: 0,
+                      g: 0,
+                      b: 0,
+                      alpha: 0
+                    }
+                  }
+                )
+                .webp({
+                  quality: 90
+                })
+                .toBuffer()
+
+            await sock.sendMessage(
+              jid,
+              {
+                sticker: stickerBuffer
+              }
+            )
+
+            return
+          }
+
+          // ========================================================
+          // #F - TEXTO
+          // ========================================================
+          const textoCitado =
+            extrairTextoMensagem(
+              quoted
+            )
+
+          if (!textoCitado) {
+
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "❌ Só consigo fazer figurinha de imagem ou texto."
+              }
+            )
+
+            return
+          }
+
+          const linhas =
+            quebrarTexto(
+              textoCitado,
+              22
+            )
+
+          const espacamento = 38
+
+          const alturaTotal =
+            linhas.length *
+            espacamento
+
+          const inicioY =
+            Math.round(
+              (512 - alturaTotal) / 2
+            ) + 30
+
+          const textosSvg =
+            linhas
+              .map(
+                (linha, i) => {
+
+                  const y =
+                    inicioY +
+                    (i * espacamento)
+
+                  return `
+                    <text
+                      x="256"
+                      y="${y}"
+                      font-family="Arial, Helvetica, sans-serif"
+                      font-size="30"
+                      font-weight="bold"
+                      fill="#000000"
+                      text-anchor="middle"
+                    >${escaparXml(linha)}</text>
+                  `
+                }
+              )
+              .join('\n')
+
+          const svg = `
+            <svg
+              width="512"
+              height="512"
+              xmlns="http://www.w3.org/2000/svg"
             >
-              ${escaparSVG(inicial)}
-            </text>
 
-          </svg>
-        `
+              <rect
+                width="100%"
+                height="100%"
+                fill="#ffffff"
+              />
 
-        composites.push({
-          input: Buffer.from(avatarSVG),
-          top: bolhaY,
-          left: 22
-        })
-      }
+              ${textosSvg}
 
-      // -------------------------------------------------------
-      // GERAR FIGURINHA
-      // -------------------------------------------------------
-      const stickerBuffer = await fundo
-        .composite(composites)
-        .webp({
-          quality: 95
-        })
-        .toBuffer()
+            </svg>
+          `
 
-      // -------------------------------------------------------
-      // ENVIAR
-      // -------------------------------------------------------
-      await sock.sendMessage(jid, {
-        sticker: stickerBuffer
-      })
+          const stickerBuffer =
+            await sharp(
+              Buffer.from(svg)
+            )
+              .webp({
+                quality: 95
+              })
+              .toBuffer()
 
-      return
-    }
-
-    // =========================================================
-    // #F → IMAGEM
-    // =========================================================
-    if (quoted.imageMessage) {
-
-      const quotedMsg = {
-        key: {
-          remoteJid: jid,
-          id: context.stanzaId,
-          fromMe: false,
-          participant: context.participant
-        },
-        message: quoted
-      }
-
-      const buffer = await downloadMediaMessage(
-        quotedMsg,
-        'buffer',
-        {},
-        {
-          reuploadRequest: sock.updateMediaMessage
-        }
-      )
-
-      const stickerBuffer = await sharp(buffer)
-        .resize(
-          512,
-          512,
-          {
-            fit: 'contain',
-            background: {
-              r: 0,
-              g: 0,
-              b: 0,
-              alpha: 0
+          await sock.sendMessage(
+            jid,
+            {
+              sticker: stickerBuffer
             }
+          )
+
+        } catch (err) {
+
+          console.error(
+            "❌ Erro na figurinha:",
+            err
+          )
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Erro ao criar a figurinha."
+            }
+          )
+        }
+
+        return
+      }
+
+      // ============================================================
+      // RESETS
+      // ============================================================
+      if (texto === '#sapareset') {
+
+        if (
+          !remetente.includes(
+            DONO.replace(
+              '@s.whatsapp.net',
+              ''
+            )
+          )
+        ) {
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Só o dono do bot pode resetar."
+            }
+          )
+
+          return
+        }
+
+        db.sapa = {}
+
+        salvarDB(db)
+
+        await sock.sendMessage(
+          jid,
+          {
+            text:
+              "✅ Ranking e registros do *Sapafomêtro* foram zerados!"
           }
         )
-        .webp({
-          quality: 80
-        })
-        .toBuffer()
 
-      await sock.sendMessage(jid, {
-        sticker: stickerBuffer
-      })
-
-      return
-    }
-
-    // =========================================================
-    // #F → TEXTO
-    // =========================================================
-    const textoCitado =
-      quoted.conversation ||
-      quoted.extendedTextMessage?.text ||
-      quoted.imageMessage?.caption ||
-      quoted.videoMessage?.caption ||
-      quoted.documentMessage?.caption ||
-      ''
-
-    if (!textoCitado) {
-
-      await sock.sendMessage(jid, {
-        text:
-          "❌ Só consigo fazer figurinha de imagem ou texto."
-      })
-
-      return
-    }
-
-    // ---------------------------------------------------------
-    // QUEBRAR TEXTO
-    // ---------------------------------------------------------
-    const linhas = quebrarTexto(
-      textoCitado,
-      22
-    )
-
-    const espacamento = 40
-
-    const alturaTotal =
-      linhas.length * espacamento
-
-    const inicioY =
-      Math.round(
-        (512 - alturaTotal) / 2
-      ) + 30
-
-    // ---------------------------------------------------------
-    // TEXTO SVG
-    // ---------------------------------------------------------
-    const textosSVG = linhas
-      .map((linha, i) => {
-
-        const y =
-          inicioY +
-          (i * espacamento)
-
-        const textoSeguro = linha
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-
-        return `
-          <text
-            x="256"
-            y="${y}"
-            font-family="Arial, sans-serif"
-            font-size="32"
-            font-weight="bold"
-            fill="#000000"
-            text-anchor="middle"
-          >
-            ${textoSeguro}
-          </text>
-        `
-      })
-      .join('\n')
-
-    // ---------------------------------------------------------
-    // SVG FINAL
-    // ---------------------------------------------------------
-    const svgTexto = `
-      <svg
-        width="512"
-        height="512"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-
-        <rect
-          width="100%"
-          height="100%"
-          fill="#ffffff"
-        />
-
-        ${textosSVG}
-
-      </svg>
-    `
-
-    // ---------------------------------------------------------
-    // GERAR FIGURINHA
-    // ---------------------------------------------------------
-    const stickerBuffer = await sharp(
-      Buffer.from(svgTexto)
-    )
-      .webp({
-        quality: 90
-      })
-      .toBuffer()
-
-    // ---------------------------------------------------------
-    // ENVIAR
-    // ---------------------------------------------------------
-    await sock.sendMessage(jid, {
-      sticker: stickerBuffer
-    })
-
-  } catch (err) {
-
-    console.error(
-      "❌ Erro na figurinha:",
-      err
-    )
-
-    await sock.sendMessage(jid, {
-      text:
-        "❌ Erro ao criar a figurinha."
-    })
-  }
-
-  return
-}
-
-    // ========== RESETS ==========
-    if (texto === '#sapareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
-        await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
         return
       }
-      db.sapa = {}
-      salvarDB(db)
-      await sock.sendMessage(jid, { text: "✅ Ranking e registros do *Sapafomêtro* foram zerados!" })
-      return
-    }
-    if (texto === '#xotareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
-        await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
+
+      if (texto === '#xotareset') {
+
+        if (
+          !remetente.includes(
+            DONO.replace(
+              '@s.whatsapp.net',
+              ''
+            )
+          )
+        ) {
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Só o dono do bot pode resetar."
+            }
+          )
+
+          return
+        }
+
+        db.xota = {}
+
+        salvarDB(db)
+
+        await sock.sendMessage(
+          jid,
+          {
+            text:
+              "✅ Ranking e registros do *Medidor de Xota* foram zerados!"
+          }
+        )
+
         return
       }
-      db.xota = {}
-      salvarDB(db)
-      await sock.sendMessage(jid, { text: "✅ Ranking e registros do *Medidor de Xota* foram zerados!" })
-      return
-    }
-    if (texto === '#cornareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
-        await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
+
+      if (texto === '#cornareset') {
+
+        if (
+          !remetente.includes(
+            DONO.replace(
+              '@s.whatsapp.net',
+              ''
+            )
+          )
+        ) {
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Só o dono do bot pode resetar."
+            }
+          )
+
+          return
+        }
+
+        db.corna = {}
+
+        salvarDB(db)
+
+        await sock.sendMessage(
+          jid,
+          {
+            text:
+              "✅ Ranking e registros do *Cornatest* foram zerados!"
+          }
+        )
+
         return
       }
-      db.corna = {}
-      salvarDB(db)
-      await sock.sendMessage(jid, { text: "✅ Ranking e registros do *Cornatest* foram zerados!" })
-      return
-    }
-    if (texto === '#gostosareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
-        await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
+
+      if (texto === '#gostosareset') {
+
+        if (
+          !remetente.includes(
+            DONO.replace(
+              '@s.whatsapp.net',
+              ''
+            )
+          )
+        ) {
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Só o dono do bot pode resetar."
+            }
+          )
+
+          return
+        }
+
+        db.gostosa = {}
+
+        salvarDB(db)
+
+        await sock.sendMessage(
+          jid,
+          {
+            text:
+              "✅ Ranking e registros do *Gostosômetro* foram zerados!"
+          }
+        )
+
         return
       }
-      db.gostosa = {}
-      salvarDB(db)
-      await sock.sendMessage(jid, { text: "✅ Ranking e registros do *Gostosômetro* foram zerados!" })
-      return
-    }
-    if (texto === '#bolsoreset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
-        await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
+
+      if (texto === '#bolsoreset') {
+
+        if (
+          !remetente.includes(
+            DONO.replace(
+              '@s.whatsapp.net',
+              ''
+            )
+          )
+        ) {
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Só o dono do bot pode resetar."
+            }
+          )
+
+          return
+        }
+
+        db.bolso = {}
+
+        salvarDB(db)
+
+        await sock.sendMessage(
+          jid,
+          {
+            text:
+              "✅ Ranking e registros do *Bolsominiomêtro* foram zerados!"
+          }
+        )
+
         return
       }
-      db.bolso = {}
-      salvarDB(db)
-      await sock.sendMessage(jid, { text: "✅ Ranking e registros do *Bolsominiomêtro* foram zerados!" })
-      return
-    }
 
-    // ========== RANKINGS (COMPLETOS) ==========
-    if (texto.startsWith('#saparanking') || texto.startsWith('#saparaking')) {
-      const lista = Object.entries(db.sapa)
-        .map(([id, data]) => ({ id, porcentagem: data.ultimaPorcentagem || 0 }))
-        .sort((a, b) => b.porcentagem - a.porcentagem)
+      // ============================================================
+      // RANKING SAPA
+      // ============================================================
+      if (
+        texto.startsWith('#saparanking') ||
+        texto.startsWith('#saparaking')
+      ) {
 
-      if (lista.length === 0) {
-        await sock.sendMessage(jid, { text: "Ainda não tem ninguém no ranking do Sapafomêtro." })
+        const lista =
+          Object.entries(db.sapa)
+            .map(
+              ([id, data]) => ({
+                id,
+                porcentagem:
+                  data.ultimaPorcentagem || 0
+              })
+            )
+            .sort(
+              (a, b) =>
+                b.porcentagem -
+                a.porcentagem
+            )
+
+        if (lista.length === 0) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Ainda não tem ninguém no ranking do Sapafomêtro."
+            }
+          )
+
+          return
+        }
+
+        let textoRanking =
+          "🏆 *RANKING COMPLETO - SAPAFOMÊTRO*\n\n"
+
+        lista.forEach(
+          (item, i) => {
+
+            textoRanking +=
+              `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
+          }
+        )
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoRanking,
+            mentions:
+              lista.map(
+                i => i.id
+              )
+          }
+        )
+
         return
       }
-      let textoRanking = "🏆 *RANKING COMPLETO - SAPAFOMÊTRO*\n\n"
-      lista.forEach((item, i) => {
-        textoRanking += `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
-      })
-      await sock.sendMessage(jid, { text: textoRanking, mentions: lista.map(i => i.id) })
-      return
-    }
 
-    if (texto.startsWith('#xotaranking') || texto.startsWith('#xotaraking')) {
-      const lista = Object.entries(db.xota)
-        .map(([id, data]) => ({ id, profundidade: data.ultimaProfundidade || 0 }))
-        .sort((a, b) => b.profundidade - a.profundidade)
+      // ============================================================
+      // RANKING XOTA
+      // ============================================================
+      if (
+        texto.startsWith('#xotaranking') ||
+        texto.startsWith('#xotaraking')
+      ) {
 
-      if (lista.length === 0) {
-        await sock.sendMessage(jid, { text: "Ainda não tem ninguém no ranking do Medidor de Xota." })
+        const lista =
+          Object.entries(db.xota)
+            .map(
+              ([id, data]) => ({
+                id,
+                profundidade:
+                  data.ultimaProfundidade || 0
+              })
+            )
+            .sort(
+              (a, b) =>
+                b.profundidade -
+                a.profundidade
+            )
+
+        if (lista.length === 0) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Ainda não tem ninguém no ranking do Medidor de Xota."
+            }
+          )
+
+          return
+        }
+
+        let textoRanking =
+          "🏆 *RANKING COMPLETO - MEDIDOR DE XOTA*\n\n"
+
+        lista.forEach(
+          (item, i) => {
+
+            textoRanking +=
+              `${i + 1}º - @${item.id.split('@')[0]} → *${item.profundidade}cm*\n`
+          }
+        )
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoRanking,
+            mentions:
+              lista.map(
+                i => i.id
+              )
+          }
+        )
+
         return
       }
-      let textoRanking = "🏆 *RANKING COMPLETO - MEDIDOR DE XOTA*\n\n"
-      lista.forEach((item, i) => {
-        textoRanking += `${i + 1}º - @${item.id.split('@')[0]} → *${item.profundidade}cm*\n`
-      })
-      await sock.sendMessage(jid, { text: textoRanking, mentions: lista.map(i => i.id) })
-      return
-    }
 
-    if (texto.startsWith('#cornoranking') || texto.startsWith('#cornaranking')) {
-      const lista = Object.entries(db.corna)
-        .map(([id, data]) => ({ id, porcentagem: data.ultimaPorcentagem || 0 }))
-        .sort((a, b) => b.porcentagem - a.porcentagem)
+      // ============================================================
+      // RANKING CORNA
+      // ============================================================
+      if (
+        texto.startsWith('#cornoranking') ||
+        texto.startsWith('#cornaranking')
+      ) {
 
-      if (lista.length === 0) {
-        await sock.sendMessage(jid, { text: "Ainda não tem ninguém no ranking do Cornatest." })
+        const lista =
+          Object.entries(db.corna)
+            .map(
+              ([id, data]) => ({
+                id,
+                porcentagem:
+                  data.ultimaPorcentagem || 0
+              })
+            )
+            .sort(
+              (a, b) =>
+                b.porcentagem -
+                a.porcentagem
+            )
+
+        if (lista.length === 0) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Ainda não tem ninguém no ranking do Cornatest."
+            }
+          )
+
+          return
+        }
+
+        let textoRanking =
+          "🏆 *RANKING COMPLETO - CORNATEST*\n\n"
+
+        lista.forEach(
+          (item, i) => {
+
+            textoRanking +=
+              `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
+          }
+        )
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoRanking,
+            mentions:
+              lista.map(
+                i => i.id
+              )
+          }
+        )
+
         return
       }
-      let textoRanking = "🏆 *RANKING COMPLETO - CORNATEST*\n\n"
-      lista.forEach((item, i) => {
-        textoRanking += `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
-      })
-      await sock.sendMessage(jid, { text: textoRanking, mentions: lista.map(i => i.id) })
-      return
-    }
 
-    if (texto.startsWith('#gostosoranking') || texto.startsWith('#gostosaranking')) {
-      const lista = Object.entries(db.gostosa)
-        .map(([id, data]) => ({ id, porcentagem: data.ultimaPorcentagem || 0 }))
-        .sort((a, b) => b.porcentagem - a.porcentagem)
+      // ============================================================
+      // RANKING GOSTOSA
+      // ============================================================
+      if (
+        texto.startsWith('#gostosoranking') ||
+        texto.startsWith('#gostosaranking')
+      ) {
 
-      if (lista.length === 0) {
-        await sock.sendMessage(jid, { text: "Ainda não tem ninguém no ranking do Gostosômetro." })
+        const lista =
+          Object.entries(db.gostosa)
+            .map(
+              ([id, data]) => ({
+                id,
+                porcentagem:
+                  data.ultimaPorcentagem || 0
+              })
+            )
+            .sort(
+              (a, b) =>
+                b.porcentagem -
+                a.porcentagem
+            )
+
+        if (lista.length === 0) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Ainda não tem ninguém no ranking do Gostosômetro."
+            }
+          )
+
+          return
+        }
+
+        let textoRanking =
+          "🏆 *RANKING COMPLETO - GOSTOSÔMETRO*\n\n"
+
+        lista.forEach(
+          (item, i) => {
+
+            textoRanking +=
+              `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
+          }
+        )
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoRanking,
+            mentions:
+              lista.map(
+                i => i.id
+              )
+          }
+        )
+
         return
       }
-      let textoRanking = "🏆 *RANKING COMPLETO - GOSTOSÔMETRO*\n\n"
-      lista.forEach((item, i) => {
-        textoRanking += `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
-      })
-      await sock.sendMessage(jid, { text: textoRanking, mentions: lista.map(i => i.id) })
-      return
-    }
 
-    if (texto.startsWith('#bolsoranking') || texto.startsWith('#bolsominiomranking')) {
-      const lista = Object.entries(db.bolso)
-        .map(([id, data]) => ({ id, porcentagem: data.ultimaPorcentagem || 0 }))
-        .sort((a, b) => b.porcentagem - a.porcentagem)
+      // ============================================================
+      // RANKING BOLSO
+      // ============================================================
+      if (
+        texto.startsWith('#bolsoranking') ||
+        texto.startsWith('#bolsominiomranking')
+      ) {
 
-      if (lista.length === 0) {
-        await sock.sendMessage(jid, { text: "Ainda não tem ninguém no ranking do Bolsominiomêtro." })
+        const lista =
+          Object.entries(db.bolso)
+            .map(
+              ([id, data]) => ({
+                id,
+                porcentagem:
+                  data.ultimaPorcentagem || 0
+              })
+            )
+            .sort(
+              (a, b) =>
+                b.porcentagem -
+                a.porcentagem
+            )
+
+        if (lista.length === 0) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Ainda não tem ninguém no ranking do Bolsominiomêtro."
+            }
+          )
+
+          return
+        }
+
+        let textoRanking =
+          "🏆 *RANKING COMPLETO - BOLSOMINIOMÊTRO*\n\n"
+
+        lista.forEach(
+          (item, i) => {
+
+            textoRanking +=
+              `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
+          }
+        )
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoRanking,
+            mentions:
+              lista.map(
+                i => i.id
+              )
+          }
+        )
+
         return
       }
-      let textoRanking = "🏆 *RANKING COMPLETO - BOLSOMINIOMÊTRO*\n\n"
-      lista.forEach((item, i) => {
-        textoRanking += `${i + 1}º - @${item.id.split('@')[0]} → *${item.porcentagem}%*\n`
-      })
-      await sock.sendMessage(jid, { text: textoRanking, mentions: lista.map(i => i.id) })
-      return
-    }
 
-    // ========== #flerte ==========
-    if (texto.startsWith('#flerte')) {
-      let alvo = mencoes[0]
-      if (!alvo && isGrupo) {
-        const metadata = await sock.groupMetadata(jid)
-        const membros = metadata.participants.map(p => p.id).filter(id => id !== sock.user.id)
-        alvo = membros[Math.floor(Math.random() * membros.length)]
-      }
-      if (!alvo) {
-        await sock.sendMessage(jid, { text: "Marque alguém ou use em um grupo!" })
+      // ============================================================
+      // FLERTE
+      // ============================================================
+      if (texto.startsWith('#flerte')) {
+
+        let alvo =
+          mencoes[0]
+
+        if (!alvo && isGrupo) {
+
+          const metadata =
+            await sock.groupMetadata(jid)
+
+          const membros =
+            metadata.participants
+              .map(p => p.id)
+              .filter(
+                id =>
+                  id !== sock.user.id
+              )
+
+          alvo =
+            membros[
+              Math.floor(
+                Math.random() *
+                membros.length
+              )
+            ]
+        }
+
+        if (!alvo) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Marque alguém ou use em um grupo!"
+            }
+          )
+
+          return
+        }
+
+        const cantada =
+          cantadas[
+            Math.floor(
+              Math.random() *
+              cantadas.length
+            )
+          ]
+
+        const mensagem =
+          `💋 *Flerte*\n\n@${alvo.split('@')[0]}\n\n${cantada}`
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: mensagem,
+            mentions: [alvo]
+          }
+        )
+
         return
       }
-      const cantada = cantadas[Math.floor(Math.random() * cantadas.length)]
-      const mensagem = `💋 *Flerte*\n\n@${alvo.split('@')[0]}\n\n${cantada}`
-      await sock.sendMessage(jid, { text: mensagem, mentions: [alvo] })
-      return
-    }
 
-    // ========== #sapatest ==========
-    if (texto.startsWith('#sapatest')) {
-      let alvo = mencoes[0] || remetente
-      if (!db.sapa[alvo]) db.sapa[alvo] = { vezes: 0, ultima: 0, ultimaPorcentagem: 0 }
-      if (agora - db.sapa[alvo].ultima < tresDias) {
-        const diasRestantes = Math.ceil((tresDias - (agora - db.sapa[alvo].ultima)) / (1000 * 60 * 60 * 24))
-        await sock.sendMessage(jid, {
-          text: `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
-          mentions: [alvo]
-        })
-        return
-      }
-      const porcentagem = Math.floor(Math.random() * 101)
-      const barra = criarBarra(porcentagem)
-      const frase = getFraseSapa(porcentagem)
-      db.sapa[alvo].vezes += 1
-      db.sapa[alvo].ultima = agora
-      db.sapa[alvo].ultimaPorcentagem = porcentagem
-      salvarDB(db)
-      const textoFinal = `🏳️‍🌈 *SAPAFOMÊTRO* 🏳️‍🌈
+      // ============================================================
+      // SAPATEST
+      // ============================================================
+      if (texto.startsWith('#sapatest')) {
+
+        let alvo =
+          mencoes[0] ||
+          remetente
+
+        if (!db.sapa[alvo]) {
+
+          db.sapa[alvo] = {
+            vezes: 0,
+            ultima: 0,
+            ultimaPorcentagem: 0
+          }
+        }
+
+        if (
+          agora -
+          db.sapa[alvo].ultima <
+          tresDias
+        ) {
+
+          const diasRestantes =
+            Math.ceil(
+              (
+                tresDias -
+                (
+                  agora -
+                  db.sapa[alvo].ultima
+                )
+              ) /
+              (
+                1000 *
+                60 *
+                60 *
+                24
+              )
+            )
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
+              mentions: [alvo]
+            }
+          )
+
+          return
+        }
+
+        const porcentagem =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const barra =
+          criarBarra(
+            porcentagem
+          )
+
+        const frase =
+          getFraseSapa(
+            porcentagem
+          )
+
+        db.sapa[alvo].vezes += 1
+        db.sapa[alvo].ultima = agora
+        db.sapa[alvo].ultimaPorcentagem =
+          porcentagem
+
+        salvarDB(db)
+
+        const textoFinal =
+          `🏳️‍🌈 *SAPAFOMÊTRO* 🏳️‍🌈
 Parabéns, você foi escolhide
 👤 Analisado: @${alvo.split('@')[0]}
 📊 Resultado: *${porcentagem}%*
@@ -1032,36 +1714,125 @@ ${barra}
 🆕 Essa pessoa já fez o teste *${db.sapa[alvo].vezes} vez(es)*
 ⏰ Próximo teste em 3 dias
 🏆 Use #saparanking pra ver o ranking completo`
-      await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
-      return
-    }
 
-    // ========== #xota ==========
-    if (texto.startsWith('#xota')) {
-      let alvo = mencoes[0] || remetente
-      if (!db.xota[alvo]) db.xota[alvo] = { vezes: 0, ultima: 0, ultimaProfundidade: 0 }
-      if (agora - db.xota[alvo].ultima < tresDias) {
-        const diasRestantes = Math.ceil((tresDias - (agora - db.xota[alvo].ultima)) / (1000 * 60 * 60 * 24))
-        await sock.sendMessage(jid, {
-          text: `⏰ Você só pode medir a cada 3 dias.\nPróxima medição em *${diasRestantes} dia(s)*.`,
-          mentions: [alvo]
-        })
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoFinal,
+            mentions: [alvo]
+          }
+        )
+
         return
       }
-      const tamanho = Math.floor(Math.random() * 96) + 5
-      const profundidade = Math.floor(Math.random() * 96) + 5
-      const potencia = Math.floor(Math.random() * 101)
-      const elasticidade = Math.floor(Math.random() * 101)
-      const umidade = Math.floor(Math.random() * 101)
-      const aperto = Math.floor(Math.random() * 101)
-      const velocidade = Math.floor(Math.random() * 121) + 10
-      const barraTamanho = criarBarraVermelha(tamanho)
-      const frase = getFraseXota(profundidade)
-      db.xota[alvo].vezes += 1
-      db.xota[alvo].ultima = agora
-      db.xota[alvo].ultimaProfundidade = profundidade
-      salvarDB(db)
-      const textoFinal = `🐸 *M E D I D O R   D E   X O T A* 🐸
+
+      // ============================================================
+      // XOTA
+      // ============================================================
+      if (texto.startsWith('#xota')) {
+
+        let alvo =
+          mencoes[0] ||
+          remetente
+
+        if (!db.xota[alvo]) {
+
+          db.xota[alvo] = {
+            vezes: 0,
+            ultima: 0,
+            ultimaProfundidade: 0
+          }
+        }
+
+        if (
+          agora -
+          db.xota[alvo].ultima <
+          tresDias
+        ) {
+
+          const diasRestantes =
+            Math.ceil(
+              (
+                tresDias -
+                (
+                  agora -
+                  db.xota[alvo].ultima
+                )
+              ) /
+              (
+                1000 *
+                60 *
+                60 *
+                24
+              )
+            )
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                `⏰ Você só pode medir a cada 3 dias.\nPróxima medição em *${diasRestantes} dia(s)*.`,
+              mentions: [alvo]
+            }
+          )
+
+          return
+        }
+
+        const tamanho =
+          Math.floor(
+            Math.random() * 96
+          ) + 5
+
+        const profundidade =
+          Math.floor(
+            Math.random() * 96
+          ) + 5
+
+        const potencia =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const elasticidade =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const umidade =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const aperto =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const velocidade =
+          Math.floor(
+            Math.random() * 121
+          ) + 10
+
+        const barraTamanho =
+          criarBarraVermelha(
+            tamanho
+          )
+
+        const frase =
+          getFraseXota(
+            profundidade
+          )
+
+        db.xota[alvo].vezes += 1
+        db.xota[alvo].ultima = agora
+        db.xota[alvo].ultimaProfundidade =
+          profundidade
+
+        salvarDB(db)
+
+        const textoFinal =
+          `🐸 *M E D I D O R   D E   X O T A* 🐸
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Medida: @${alvo.split('@')[0]}
 📏 Tamanho: *${tamanho}cm*
@@ -1079,30 +1850,95 @@ Potência de capôceta: *${potencia}%*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⏰ Próxima medição em 3 dias
 🏆 Use *#xotaranking* pra ver o ranking completo`
-      await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
-      return
-    }
 
-    // ========== #cornatest ==========
-    if (texto.startsWith('#cornatest')) {
-      let alvo = mencoes[0] || remetente
-      if (!db.corna[alvo]) db.corna[alvo] = { vezes: 0, ultima: 0, ultimaPorcentagem: 0 }
-      if (agora - db.corna[alvo].ultima < tresDias) {
-        const diasRestantes = Math.ceil((tresDias - (agora - db.corna[alvo].ultima)) / (1000 * 60 * 60 * 24))
-        await sock.sendMessage(jid, {
-          text: `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
-          mentions: [alvo]
-        })
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoFinal,
+            mentions: [alvo]
+          }
+        )
+
         return
       }
-      const porcentagem = Math.floor(Math.random() * 101)
-      const barra = criarBarraVermelha(porcentagem)
-      const frase = getFraseCorna(porcentagem)
-      db.corna[alvo].vezes += 1
-      db.corna[alvo].ultima = agora
-      db.corna[alvo].ultimaPorcentagem = porcentagem
-      salvarDB(db)
-      const textoFinal = `🐂 *CORNATEST* 🐂
+
+      // ============================================================
+      // CORNATEST
+      // ============================================================
+      if (texto.startsWith('#cornatest')) {
+
+        let alvo =
+          mencoes[0] ||
+          remetente
+
+        if (!db.corna[alvo]) {
+
+          db.corna[alvo] = {
+            vezes: 0,
+            ultima: 0,
+            ultimaPorcentagem: 0
+          }
+        }
+
+        if (
+          agora -
+          db.corna[alvo].ultima <
+          tresDias
+        ) {
+
+          const diasRestantes =
+            Math.ceil(
+              (
+                tresDias -
+                (
+                  agora -
+                  db.corna[alvo].ultima
+                )
+              ) /
+              (
+                1000 *
+                60 *
+                60 *
+                24
+              )
+            )
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
+              mentions: [alvo]
+            }
+          )
+
+          return
+        }
+
+        const porcentagem =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const barra =
+          criarBarraVermelha(
+            porcentagem
+          )
+
+        const frase =
+          getFraseCorna(
+            porcentagem
+          )
+
+        db.corna[alvo].vezes += 1
+        db.corna[alvo].ultima = agora
+        db.corna[alvo].ultimaPorcentagem =
+          porcentagem
+
+        salvarDB(db)
+
+        const textoFinal =
+          `🐂 *CORNATEST* 🐂
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Analisada: @${alvo.split('@')[0]}
 📊 Nível de corna: *${porcentagem}%*
@@ -1111,30 +1947,98 @@ ${barra}
 🆕 Essa pessoa já fez o teste *${db.corna[alvo].vezes} vez(es)*
 ⏰ Próximo teste em 3 dias
 🏆 Use #cornoranking pra ver o ranking completo`
-      await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
-      return
-    }
 
-    // ========== #gostosometro ==========
-    if (texto.startsWith('#gostosometro') || texto.startsWith('#gostosômetro')) {
-      let alvo = mencoes[0] || remetente
-      if (!db.gostosa[alvo]) db.gostosa[alvo] = { vezes: 0, ultima: 0, ultimaPorcentagem: 0 }
-      if (agora - db.gostosa[alvo].ultima < tresDias) {
-        const diasRestantes = Math.ceil((tresDias - (agora - db.gostosa[alvo].ultima)) / (1000 * 60 * 60 * 24))
-        await sock.sendMessage(jid, {
-          text: `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
-          mentions: [alvo]
-        })
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoFinal,
+            mentions: [alvo]
+          }
+        )
+
         return
       }
-      const porcentagem = Math.floor(Math.random() * 101)
-      const barra = criarBarra(porcentagem)
-      const frase = getFraseGostosa(porcentagem)
-      db.gostosa[alvo].vezes += 1
-      db.gostosa[alvo].ultima = agora
-      db.gostosa[alvo].ultimaPorcentagem = porcentagem
-      salvarDB(db)
-      const textoFinal = `🔥 *GOSTOSÔMETRO* 🔥
+
+      // ============================================================
+      // GOSTOSÔMETRO
+      // ============================================================
+      if (
+        texto.startsWith('#gostosometro') ||
+        texto.startsWith('#gostosômetro')
+      ) {
+
+        let alvo =
+          mencoes[0] ||
+          remetente
+
+        if (!db.gostosa[alvo]) {
+
+          db.gostosa[alvo] = {
+            vezes: 0,
+            ultima: 0,
+            ultimaPorcentagem: 0
+          }
+        }
+
+        if (
+          agora -
+          db.gostosa[alvo].ultima <
+          tresDias
+        ) {
+
+          const diasRestantes =
+            Math.ceil(
+              (
+                tresDias -
+                (
+                  agora -
+                  db.gostosa[alvo].ultima
+                )
+              ) /
+              (
+                1000 *
+                60 *
+                60 *
+                24
+              )
+            )
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
+              mentions: [alvo]
+            }
+          )
+
+          return
+        }
+
+        const porcentagem =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const barra =
+          criarBarra(
+            porcentagem
+          )
+
+        const frase =
+          getFraseGostosa(
+            porcentagem
+          )
+
+        db.gostosa[alvo].vezes += 1
+        db.gostosa[alvo].ultima = agora
+        db.gostosa[alvo].ultimaPorcentagem =
+          porcentagem
+
+        salvarDB(db)
+
+        const textoFinal =
+          `🔥 *GOSTOSÔMETRO* 🔥
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Analisada: @${alvo.split('@')[0]}
 📊 Nível de gostosa: *${porcentagem}%*
@@ -1143,30 +2047,99 @@ ${barra}
 🆕 Essa pessoa já fez o teste *${db.gostosa[alvo].vezes} vez(es)*
 ⏰ Próximo teste em 3 dias
 🏆 Use #gostosoranking pra ver o ranking completo`
-      await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
-      return
-    }
 
-    // ========== #bolsominiometro ==========
-    if (texto.startsWith('#bolsominiometro') || texto.startsWith('#bolsominiomêtro') || texto.startsWith('#bolso')) {
-      let alvo = mencoes[0] || remetente
-      if (!db.bolso[alvo]) db.bolso[alvo] = { vezes: 0, ultima: 0, ultimaPorcentagem: 0 }
-      if (agora - db.bolso[alvo].ultima < tresDias) {
-        const diasRestantes = Math.ceil((tresDias - (agora - db.bolso[alvo].ultima)) / (1000 * 60 * 60 * 24))
-        await sock.sendMessage(jid, {
-          text: `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
-          mentions: [alvo]
-        })
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoFinal,
+            mentions: [alvo]
+          }
+        )
+
         return
       }
-      const porcentagem = Math.floor(Math.random() * 101)
-      const barra = criarBarra(porcentagem)
-      const frase = getFraseBolso(porcentagem)
-      db.bolso[alvo].vezes += 1
-      db.bolso[alvo].ultima = agora
-      db.bolso[alvo].ultimaPorcentagem = porcentagem
-      salvarDB(db)
-      const textoFinal = `🇧🇷 *BOLSOMINIOMÊTRO* 🇧🇷
+
+      // ============================================================
+      // BOLSOMINIÔMETRO
+      // ============================================================
+      if (
+        texto.startsWith('#bolsominiometro') ||
+        texto.startsWith('#bolsominiomêtro') ||
+        texto.startsWith('#bolso')
+      ) {
+
+        let alvo =
+          mencoes[0] ||
+          remetente
+
+        if (!db.bolso[alvo]) {
+
+          db.bolso[alvo] = {
+            vezes: 0,
+            ultima: 0,
+            ultimaPorcentagem: 0
+          }
+        }
+
+        if (
+          agora -
+          db.bolso[alvo].ultima <
+          tresDias
+        ) {
+
+          const diasRestantes =
+            Math.ceil(
+              (
+                tresDias -
+                (
+                  agora -
+                  db.bolso[alvo].ultima
+                )
+              ) /
+              (
+                1000 *
+                60 *
+                60 *
+                24
+              )
+            )
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                `⏰ Você só pode fazer o teste a cada 3 dias.\nPróximo teste em *${diasRestantes} dia(s)*.`,
+              mentions: [alvo]
+            }
+          )
+
+          return
+        }
+
+        const porcentagem =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const barra =
+          criarBarra(
+            porcentagem
+          )
+
+        const frase =
+          getFraseBolso(
+            porcentagem
+          )
+
+        db.bolso[alvo].vezes += 1
+        db.bolso[alvo].ultima = agora
+        db.bolso[alvo].ultimaPorcentagem =
+          porcentagem
+
+        salvarDB(db)
+
+        const textoFinal =
+          `🇧🇷 *BOLSOMINIOMÊTRO* 🇧🇷
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 👤 Analisada: @${alvo.split('@')[0]}
 📊 Nível bolsominion: *${porcentagem}%*
@@ -1175,46 +2148,95 @@ ${barra}
 🆕 Essa pessoa já fez o teste *${db.bolso[alvo].vezes} vez(es)*
 ⏰ Próximo teste em 3 dias
 🏆 Use #bolsoranking pra ver o ranking completo`
-      await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
-      return
-    }
 
-    // ========== #k (Chance da Karina) ==========
-    if (texto === '#k' || texto.startsWith('#k ')) {
-      let alvo = mencoes[0]
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoFinal,
+            mentions: [alvo]
+          }
+        )
 
-      if (!alvo && isGrupo) {
-        const metadata = await sock.groupMetadata(jid)
-        const membros = metadata.participants.map(p => p.id).filter(id => id !== sock.user.id)
-        alvo = membros[Math.floor(Math.random() * membros.length)]
-      }
-
-      if (!alvo) {
-        await sock.sendMessage(jid, { text: "Marque alguém ou use em um grupo!" })
         return
       }
 
-      const chance = Math.floor(Math.random() * 101)
+      // ============================================================
+      // CHANCE DA KARINA
+      // ============================================================
+      if (
+        texto === '#k' ||
+        texto.startsWith('#k ')
+      ) {
 
-      const frasesKarina = [
-        "Eu falei vida, melhor ser não monogâmica do que corna 😌",
-        "Bora pra Olinda que a Karina já tá com a sua mulher doidinha de Axé 💃",
-        "A Karina não rouba mulher... ela só pega emprestada 😘",
-        "Sua mulher já tá aprendendo o passo do frevo com a Karina lá longe",
-        "Não monogamia é o nome do jogo, e a Karina joga muito bem",
-        "Enquanto você dorme, a Karina roubou sua mulher...",
-        "A Karina só quer o bem... o bem da sua mulher 😈",
-        "Olinda, Axé e sua mulher. A trindade sagrada da Karina",
-        "Xiiiu! Ela não é corna, a guarda é compartilhada com a Karina",
-        "Olhou, sorriu, Karina pegou sua mulher e sumiu",
-        "Melhor abrir o relacionamento do que perder ela pra Karina",
-        "A Karina não briga por mulher. Ela só chega e leva 😌",
-        "Se você tivesse mulher, já não era mais tua"
-      ]
+        let alvo =
+          mencoes[0]
 
-      const frase = frasesKarina[Math.floor(Math.random() * frasesKarina.length)]
+        if (!alvo && isGrupo) {
 
-      const textoFinal = `💃 *CHANCE DA KARINA* 💃
+          const metadata =
+            await sock.groupMetadata(jid)
+
+          const membros =
+            metadata.participants
+              .map(p => p.id)
+              .filter(
+                id =>
+                  id !== sock.user.id
+              )
+
+          alvo =
+            membros[
+              Math.floor(
+                Math.random() *
+                membros.length
+              )
+            ]
+        }
+
+        if (!alvo) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Marque alguém ou use em um grupo!"
+            }
+          )
+
+          return
+        }
+
+        const chance =
+          Math.floor(
+            Math.random() * 101
+          )
+
+        const frasesKarina = [
+          "Eu falei vida, melhor ser não monogâmica do que corna 😌",
+          "Bora pra Olinda que a Karina já tá com a sua mulher doidinha de Axé 💃",
+          "A Karina não rouba mulher... ela só pega emprestada 😘",
+          "Sua mulher já tá aprendendo o passo do frevo com a Karina lá longe",
+          "Não monogamia é o nome do jogo, e a Karina joga muito bem",
+          "Enquanto você dorme, a Karina roubou sua mulher...",
+          "A Karina só quer o bem... o bem da sua mulher 😈",
+          "Olinda, Axé e sua mulher. A trindade sagrada da Karina",
+          "Xiiiu! Ela não é corna, a guarda é compartilhada com a Karina",
+          "Olhou, sorriu, Karina pegou sua mulher e sumiu",
+          "Melhor abrir o relacionamento do que perder ela pra Karina",
+          "A Karina não briga por mulher. Ela só chega e leva 😌",
+          "Se você tivesse mulher, já não era mais tua"
+        ]
+
+        const frase =
+          frasesKarina[
+            Math.floor(
+              Math.random() *
+              frasesKarina.length
+            )
+          ]
+
+        const textoFinal =
+          `💃 *CHANCE DA KARINA* 💃
 
 👤 Vítima: @${alvo.split('@')[0]}
 
@@ -1222,116 +2244,373 @@ ${barra}
 
 💬 ${frase}`
 
-      await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
-      return
-    }
+        await sock.sendMessage(
+          jid,
+          {
+            text: textoFinal,
+            mentions: [alvo]
+          }
+        )
 
-    // ========== #verdade e #desafio ==========
-    if (texto.startsWith('#verdade') || texto.startsWith('#desafio')) {
-      let alvo = mencoes[0]
-      if (!alvo && isGrupo) {
-        const metadata = await sock.groupMetadata(jid)
-        const membros = metadata.participants.map(p => p.id).filter(id => id !== sock.user.id)
-        alvo = membros[Math.floor(Math.random() * membros.length)]
-      }
-      if (!alvo) {
-        await sock.sendMessage(jid, { text: "Marque alguém ou use em um grupo para sortear!" })
         return
       }
 
-      const isVerdade = texto.startsWith('#verdade')
-      const lista = isVerdade ? verdades : desafios
-      const pergunta = lista[Math.floor(Math.random() * lista.length)]
+      // ============================================================
+      // VERDADE / DESAFIO
+      // ============================================================
+      if (
+        texto.startsWith('#verdade') ||
+        texto.startsWith('#desafio')
+      ) {
 
-      const titulo = isVerdade ? "🗣️ *VERDADE*" : "🔥 *DESAFIO*"
-      const mensagem = `${titulo}\n\n@${alvo.split('@')[0]}\n\n${pergunta}`
-      await sock.sendMessage(jid, { text: mensagem, mentions: [alvo] })
-      return
-    }
+        let alvo =
+          mencoes[0]
 
-    // ========== #briga ==========
-    if (texto.startsWith('#briga')) {
-      let p1 = mencoes[0]
-      let p2 = mencoes[1]
+        if (!alvo && isGrupo) {
 
-      if (!p1 && isGrupo) {
-        const metadata = await sock.groupMetadata(jid)
-        const membros = metadata.participants.map(p => p.id).filter(id => id !== sock.user.id)
-        p1 = membros[Math.floor(Math.random() * membros.length)]
-        p2 = membros[Math.floor(Math.random() * membros.length)]
-        while (p2 === p1 && membros.length > 1) {
-          p2 = membros[Math.floor(Math.random() * membros.length)]
+          const metadata =
+            await sock.groupMetadata(jid)
+
+          const membros =
+            metadata.participants
+              .map(p => p.id)
+              .filter(
+                id =>
+                  id !== sock.user.id
+              )
+
+          alvo =
+            membros[
+              Math.floor(
+                Math.random() *
+                membros.length
+              )
+            ]
         }
-      }
 
-      if (!p1) {
-        await sock.sendMessage(jid, { text: "Marque uma ou duas pessoas!\nExemplo: #briga @pessoa1 @pessoa2" })
-        return
-      }
+        if (!alvo) {
 
-      if (!p2) p2 = remetente
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Marque alguém ou use em um grupo para sortear!"
+            }
+          )
 
-      const brigas = [
-        `@${p1.split('@')[0]} e @${p2.split('@')[0]} se pegaram no tapa porque as duas queriam a mesma menina no rolê. No final as duas acabaram se beijando e a menina ficou só olhando.`,
-        `A briga começou quando @${p1.split('@')[0]} falou que @${p2.split('@')[0]} era "só amiga". Agora as duas estão se xingando de corna e ao mesmo tempo se olhando com tesão.`,
-        `@${p1.split('@')[0]} acusou @${p2.split('@')[0]} de roubar sua crush. A discussão ficou tão quente que as duas acabaram no banheiro juntas "resolvendo" o problema.`,
-        `As duas começaram a discutir sobre quem chupa melhor. A briga durou 3 minutos e terminou com as duas testando uma na outra na frente de todo mundo.`,
-        `@${p1.split('@')[0]} e @${p2.split('@')[0]} entraram em guerra porque uma falou que a outra era "hétero enrustida". No final as duas provaram o contrário na mesma cama.`,
-        `A discussão começou por ciúmes. @${p1.split('@')[0]} não gostou de ver @${p2.split('@')[0]} flertando com outra. Agora as duas estão se comendo de raiva (e de tesão).`,
-        `@${p1.split('@')[0]} mandou um "sua puta" pra @${p2.split('@')[0]}. A resposta foi um "vem ser puta junto". E elas foram.`,
-        `Briga clássica de sapatão: as duas querendo ser a "namorada oficial". Resultado: as duas viraram amantes uma da outra e a namorada oficial ficou de fora.`
-      ]
-
-      const briga = brigas[Math.floor(Math.random() * brigas.length)]
-      const mensagem = `⚔️ *BRIGA DE SAPATÃO* ⚔️\n\n${briga}`
-      await sock.sendMessage(jid, { text: mensagem, mentions: [p1, p2] })
-      return
-    }
-
-    // ========== #clima ==========
-    if (texto.startsWith('#clima')) {
-      const cidade = textoOriginal.replace(/#clima/i, '').trim()
-      if (!cidade) {
-        await sock.sendMessage(jid, { text: "Digite o nome da cidade.\nExemplo: #clima São Paulo" })
-        return
-      }
-      try {
-        const geo = await axios.get(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cidade)}&count=1&language=pt&format=json`)
-        if (!geo.data.results || geo.data.results.length === 0) {
-          await sock.sendMessage(jid, { text: "❌ Cidade não encontrada." })
           return
         }
-        const local = geo.data.results[0]
-        const { latitude, longitude, name, admin1 } = local
-        const weather = await axios.get(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=America/Sao_Paulo&forecast_days=4`)
-        const atual = weather.data.current
-        const daily = weather.data.daily
-        const temp = atual.temperature_2m
-        let fraseClima = ""
-        if (temp >= 8 && temp <= 12) {
-          fraseClima = "Tá frio né? Dica do dia: Oferece ajuda pra crush colar o velcro que esquenta!"
-        } else if (temp >= 13 && temp <= 23) {
-          fraseClima = "Ta friozinho, né? Alguém precisa de um aquecedor humano ou só um vinhozinho já resolve?"
-        } else if (temp >= 24 && temp <= 26) {
-          fraseClima = `Previsão do tempo pra hoje: ${temp}°C e 100% de chance de eu chamar vocês pra tomar umas!`
-        } else if (temp >= 27 && temp <= 32) {
-          fraseClima = "Amiga, tá um calor absurdo… mas ainda não chega nem perto do fogo que você tem no cool! você aguenta!"
-        } else if (temp < 8) {
-          fraseClima = "Tá congelando! Hora de virar um burrito humano embaixo do cobertor."
-        } else {
-          fraseClima = "Calor de derreter! Se ainda não derreteu, é porque você é forte."
+
+        const isVerdade =
+          texto.startsWith(
+            '#verdade'
+          )
+
+        const lista =
+          isVerdade
+            ? verdades
+            : desafios
+
+        const pergunta =
+          lista[
+            Math.floor(
+              Math.random() *
+              lista.length
+            )
+          ]
+
+        const titulo =
+          isVerdade
+            ? "🗣️ *VERDADE*"
+            : "🔥 *DESAFIO*"
+
+        const mensagem =
+          `${titulo}\n\n@${alvo.split('@')[0]}\n\n${pergunta}`
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: mensagem,
+            mentions: [alvo]
+          }
+        )
+
+        return
+      }
+
+      // ============================================================
+      // BRIGA
+      // ============================================================
+      if (texto.startsWith('#briga')) {
+
+        let p1 =
+          mencoes[0]
+
+        let p2 =
+          mencoes[1]
+
+        if (!p1 && isGrupo) {
+
+          const metadata =
+            await sock.groupMetadata(jid)
+
+          const membros =
+            metadata.participants
+              .map(p => p.id)
+              .filter(
+                id =>
+                  id !== sock.user.id
+              )
+
+          p1 =
+            membros[
+              Math.floor(
+                Math.random() *
+                membros.length
+              )
+            ]
+
+          p2 =
+            membros[
+              Math.floor(
+                Math.random() *
+                membros.length
+              )
+            ]
+
+          while (
+            p2 === p1 &&
+            membros.length > 1
+          ) {
+
+            p2 =
+              membros[
+                Math.floor(
+                  Math.random() *
+                  membros.length
+                )
+              ]
+          }
         }
-        let previsao = "\n📅 *Próximos dias:*\n"
-        const diasSemana = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"]
-        for (let i = 1; i <= 3; i++) {
-          const data = new Date(daily.time[i])
-          const dia = diasSemana[data.getDay()]
-          const max = daily.temperature_2m_max[i]
-          const min = daily.temperature_2m_min[i]
-          const chuva = daily.precipitation_sum[i]
-          previsao += `• ${dia}: ${min}°C ~ ${max}°C | Chuva: ${chuva}mm\n`
+
+        if (!p1) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Marque uma ou duas pessoas!\nExemplo: #briga @pessoa1 @pessoa2"
+            }
+          )
+
+          return
         }
-        const textoClima = `🌤️ *Clima em ${name}${admin1 ? ', ' + admin1 : ''}*
+
+        if (!p2) {
+          p2 = remetente
+        }
+
+        const brigas = [
+          `@${p1.split('@')[0]} e @${p2.split('@')[0]} se pegaram no tapa porque as duas queriam a mesma menina no rolê. No final as duas acabaram se beijando e a menina ficou só olhando.`,
+          `A briga começou quando @${p1.split('@')[0]} falou que @${p2.split('@')[0]} era "só amiga". Agora as duas estão se xingando de corna e ao mesmo tempo se olhando com tesão.`,
+          `@${p1.split('@')[0]} acusou @${p2.split('@')[0]} de roubar sua crush. A discussão ficou tão quente que as duas acabaram no banheiro juntas "resolvendo" o problema.`,
+          `As duas começaram a discutir sobre quem chupa melhor. A briga durou 3 minutos e terminou com as duas testando uma na outra na frente de todo mundo.`,
+          `@${p1.split('@')[0]} e @${p2.split('@')[0]} entraram em guerra porque uma falou que a outra era "hétero enrustida". No final as duas provaram o contrário na mesma cama.`,
+          `A discussão começou por ciúmes. @${p1.split('@')[0]} não gostou de ver @${p2.split('@')[0]} flertando com outra. Agora as duas estão se comendo de raiva (e de tesão).`,
+          `@${p1.split('@')[0]} mandou um "sua puta" pra @${p2.split('@')[0]}. A resposta foi um "vem ser puta junto". E elas foram.`,
+          `Briga clássica de sapatão: as duas querendo ser a "namorada oficial". Resultado: as duas viraram amantes uma da outra e a namorada oficial ficou de fora.`
+        ]
+
+        const briga =
+          brigas[
+            Math.floor(
+              Math.random() *
+              brigas.length
+            )
+          ]
+
+        const mensagem =
+          `⚔️ *BRIGA DE SAPATÃO* ⚔️\n\n${briga}`
+
+        await sock.sendMessage(
+          jid,
+          {
+            text: mensagem,
+            mentions: [
+              p1,
+              p2
+            ]
+          }
+        )
+
+        return
+      }
+
+      // ============================================================
+      // CLIMA
+      // ============================================================
+      if (texto.startsWith('#clima')) {
+
+        const cidade =
+          textoOriginal
+            .replace(
+              /#clima/i,
+              ''
+            )
+            .trim()
+
+        if (!cidade) {
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "Digite o nome da cidade.\nExemplo: #clima São Paulo"
+            }
+          )
+
+          return
+        }
+
+        try {
+
+          const geo =
+            await axios.get(
+              `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cidade)}&count=1&language=pt&format=json`
+            )
+
+          if (
+            !geo.data.results ||
+            geo.data.results.length === 0
+          ) {
+
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "❌ Cidade não encontrada."
+              }
+            )
+
+            return
+          }
+
+          const local =
+            geo.data.results[0]
+
+          const {
+            latitude,
+            longitude,
+            name,
+            admin1
+          } = local
+
+          const weather =
+            await axios.get(
+              `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=America/Sao_Paulo&forecast_days=4`
+            )
+
+          const atual =
+            weather.data.current
+
+          const daily =
+            weather.data.daily
+
+          const temp =
+            atual.temperature_2m
+
+          let fraseClima = ""
+
+          if (
+            temp >= 8 &&
+            temp <= 12
+          ) {
+
+            fraseClima =
+              "Tá frio né? Dica do dia: Oferece ajuda pra crush colar o velcro que esquenta!"
+
+          } else if (
+            temp >= 13 &&
+            temp <= 23
+          ) {
+
+            fraseClima =
+              "Ta friozinho, né? Alguém precisa de um aquecedor humano ou só um vinhozinho já resolve?"
+
+          } else if (
+            temp >= 24 &&
+            temp <= 26
+          ) {
+
+            fraseClima =
+              `Previsão do tempo pra hoje: ${temp}°C e 100% de chance de eu chamar vocês pra tomar umas!`
+
+          } else if (
+            temp >= 27 &&
+            temp <= 32
+          ) {
+
+            fraseClima =
+              "Amiga, tá um calor absurdo… mas ainda não chega nem perto do fogo que você tem no cool! você aguenta!"
+
+          } else if (temp < 8) {
+
+            fraseClima =
+              "Tá congelando! Hora de virar um burrito humano embaixo do cobertor."
+
+          } else {
+
+            fraseClima =
+              "Calor de derreter! Se ainda não derreteu, é porque você é forte."
+          }
+
+          let previsao =
+            "\n📅 *Próximos dias:*\n"
+
+          const diasSemana = [
+            "Dom",
+            "Seg",
+            "Ter",
+            "Qua",
+            "Qui",
+            "Sex",
+            "Sáb"
+          ]
+
+          for (
+            let i = 1;
+            i <= 3;
+            i++
+          ) {
+
+            const data =
+              new Date(
+                daily.time[i]
+              )
+
+            const dia =
+              diasSemana[
+                data.getDay()
+              ]
+
+            const max =
+              daily
+                .temperature_2m_max[i]
+
+            const min =
+              daily
+                .temperature_2m_min[i]
+
+            const chuva =
+              daily
+                .precipitation_sum[i]
+
+            previsao +=
+              `• ${dia}: ${min}°C ~ ${max}°C | Chuva: ${chuva}mm\n`
+          }
+
+          const textoClima =
+            `🌤️ *Clima em ${name}${admin1 ? ', ' + admin1 : ''}*
 🌡️ Temperatura: *${temp}°C*
 🤒 Sensação térmica: *${atual.apparent_temperature}°C*
 💧 Umidade: *${atual.relative_humidity_2m}%*
@@ -1339,14 +2618,31 @@ ${barra}
 💨 Vento: *${atual.wind_speed_10m} km/h*
 ✨ ${fraseClima}
 ${previsao}`
-        await sock.sendMessage(jid, { text: textoClima })
-      } catch (err) {
-        console.error(err)
-        await sock.sendMessage(jid, { text: "❌ Erro ao buscar o clima." })
+
+          await sock.sendMessage(
+            jid,
+            {
+              text: textoClima
+            }
+          )
+
+        } catch (err) {
+
+          console.error(err)
+
+          await sock.sendMessage(
+            jid,
+            {
+              text:
+                "❌ Erro ao buscar o clima."
+            }
+          )
+        }
+
+        return
       }
-      return
     }
-  })
+  )
 }
 
 conectarBot()
