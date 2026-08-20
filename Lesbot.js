@@ -455,7 +455,7 @@ async function obterNomeUsuario(sock, jid, participante) {
 }
 
 // ============================================================
-// CRIAR STICKER #FF - SEM FUNDO, CENTRALIZADO E COM NOME CORRIGIDO
+// CRIAR STICKER #FF - SEM NOME E COMPACTO
 // ============================================================
 
 async function criarStickerFF(sock, jid, participante, textoCitado) {
@@ -463,7 +463,6 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
 
   const larguraBolha = 360
   const paddingX = 20
-  const alturaCabecalho = 42
   const alturaLinha = 32
 
   let linhas = quebrarTextoFF(textoCitado, 25).slice(0, 8)
@@ -472,23 +471,17 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   }
 
   const alturaTexto = linhas.length * alturaLinha
-  const alturaBolha = Math.max(100, alturaCabecalho + alturaTexto + 45)
+  const alturaBolha = Math.max(70, alturaTexto + 35)
 
   const agora = new Date()
   const hora = agora.getHours().toString().padStart(2, '0')
   const minuto = agora.getMinutes().toString().padStart(2, '0')
   const horario = `${hora}:${minuto}`
 
-  let nomeUsuario = await obterNomeUsuario(sock, jid, participante)
-  if (!nomeUsuario || nomeUsuario === numero(participante)) {
-    nomeUsuario = `+${numero(participante)}`
-  }
-  const nomeFinal = nomeUsuario.length > 20 ? nomeUsuario.substring(0, 20) + '...' : nomeUsuario
-
   let textoSvg = ''
   linhas.forEach((linha, index) => {
     if (!linha) return
-    const y = 42 + 10 + (index * alturaLinha)
+    const y = 24 + (index * alturaLinha)
     textoSvg += `
       <text
         x="${paddingX}"
@@ -502,7 +495,7 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   })
 
   const horarioX = larguraBolha - 85
-  const horarioY = alturaBolha - 14
+  const horarioY = alturaBolha - 12
 
   const svgBolha = `
     <svg width="${larguraBolha + 20}" height="${alturaBolha + 20}" xmlns="http://www.w3.org/2000/svg">
@@ -526,15 +519,6 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
         fill="#202c33"
       />
 
-      <text
-        x="${paddingX + 15}"
-        y="30"
-        font-family="sans-serif"
-        font-size="20"
-        font-weight="bold"
-        fill="#53bdeb"
-      >${escaparXml(nomeFinal)}</text>
-
       <g transform="translate(15, 0)">
         ${textoSvg}
       </g>
@@ -557,7 +541,7 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
     </svg>
   `
 
-  const tamanhoFoto = 95
+  const tamanhoFoto = 85
   const profileBuffer = await baixarFotoPerfil(sock, participante)
   const fotoCircular = await criarFotoCircular(profileBuffer, tamanhoFoto)
 
@@ -578,7 +562,7 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   if (fotoCircular) {
     composicoes.push({
       input: fotoCircular,
-      top: topoY + 15,
+      top: topoY + 5,
       left: 30
     })
   }
@@ -586,7 +570,7 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   composicoes.push({
     input: Buffer.from(svgBolha),
     top: topoY,
-    left: fotoCircular ? 125 : 70
+    left: fotoCircular ? 120 : 70
   })
 
   return sharp(fundoTransparente)
