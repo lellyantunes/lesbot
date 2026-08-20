@@ -14,7 +14,7 @@ const sharp = require('sharp')
 const pino = require('pino')
 
 // ============================================================
-// TRATAMENTO GLOBAL DE ERROS (Para os logs nunca sumirem)
+// TRATAMENTO GLOBAL DE ERROS
 // ============================================================
 
 process.on('uncaughtException', (err) => {
@@ -272,7 +272,7 @@ function quebrarTexto(texto, maxChars = 22) {
   return linhas
 }
 
-function quebrarTextoFF(texto, maxChars = 26) {
+function quebrarTextoFF(texto, maxChars = 25) {
   const linhas = []
   const blocos = String(texto).replace(/\r/g, '').split('\n')
 
@@ -455,73 +455,135 @@ async function obterNomeUsuario(sock, jid, participante) {
 }
 
 // ============================================================
-// CRIAR STICKER #FF OTIMIZADO
+// CRIAR STICKER #FF - LAYOUT PERFEITO IDÊNTICO AO WHATSAPP
 // ============================================================
 
 async function criarStickerFF(sock, jid, participante, textoCitado) {
   const CANVAS = 512
-  const bolhaX = 88
-  const bolhaY = 92
-  const margemDireita = 20
-  const larguraBolha = CANVAS - bolhaX - margemDireita
-  const paddingX = 20
-  const alturaCabecalho = 45
-  const alturaLinha = 31
 
-  let linhas = quebrarTextoFF(textoCitado, 26).slice(0, 10)
-  if (textoCitado.length > 250 && linhas.length) {
+  const fotoX = 15
+  const fotoY = 55
+  const tamanhoFoto = 100
+
+  const bolhaX = 125
+  const bolhaY = 40
+  const larguraBolha = 370
+  const paddingX = 22
+  const alturaCabecalho = 42
+  const alturaLinha = 32
+
+  let linhas = quebrarTextoFF(textoCitado, 25).slice(0, 8)
+  if (textoCitado.length > 200 && linhas.length) {
     linhas[linhas.length - 1] = '...'
   }
 
   const alturaTexto = linhas.length * alturaLinha
-  const alturaBolha = alturaCabecalho + alturaTexto + 45
+  const alturaBolha = Math.max(100, alturaCabecalho + alturaTexto + 45)
+
   const agora = new Date()
   const hora = agora.getHours().toString().padStart(2, '0')
   const minuto = agora.getMinutes().toString().padStart(2, '0')
   const horario = `${hora}:${minuto}`
 
   const nomeUsuario = await obterNomeUsuario(sock, jid, participante)
-  const nomeFinal = nomeUsuario.length > 22 ? nomeUsuario.substring(0, 22) + '...' : nomeUsuario
+  const nomeFinal = nomeUsuario.length > 20 ? nomeUsuario.substring(0, 20) + '...' : nomeUsuario
 
   let textoSvg = ''
   linhas.forEach((linha, index) => {
     if (!linha) return
-    const y = bolhaY + alturaCabecalho + 23 + (index * alturaLinha)
-    textoSvg += `<text x="${bolhaX + paddingX}" y="${y}" font-family="sans-serif" font-size="25" font-weight="normal" fill="#e9edef">${escaparXml(linha)}</text>`
+    const y = bolhaY + alturaCabecalho + 10 + (index * alturaLinha)
+    textoSvg += `
+      <text
+        x="${bolhaX + paddingX}"
+        y="${y}"
+        font-family="sans-serif"
+        font-size="24"
+        font-weight="normal"
+        fill="#e9edef"
+      >${escaparXml(linha)}</text>
+    `
   })
 
-  const horarioX = bolhaX + larguraBolha - 78
-  const horarioY = bolhaY + alturaBolha - 12
+  const horarioX = bolhaX + larguraBolha - 85
+  const horarioY = bolhaY + alturaBolha - 14
 
   const svgBolha = `
     <svg width="${CANVAS}" height="${CANVAS}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="${bolhaX}" y="${bolhaY}" width="${larguraBolha}" height="${alturaBolha}" rx="16" ry="16" fill="#202c33"/>
-      <path d="M ${bolhaX} ${bolhaY + 14} C ${bolhaX - 8} ${bolhaY + 20}, ${bolhaX - 12} ${bolhaY + 32}, ${bolhaX - 2} ${bolhaY + 42} L ${bolhaX + 10} ${bolhaY + 48} L ${bolhaX + 12} ${bolhaY + 18} Z" fill="#202c33"/>
-      <text x="${bolhaX + paddingX}" y="${bolhaY + 30}" font-family="sans-serif" font-size="20" font-weight="bold" fill="#53bdeb">${escaparXml(nomeFinal)}</text>
+      <rect width="100%" height="100%" fill="#0b141a"/>
+
+      <rect
+        x="${bolhaX}"
+        y="${bolhaY}"
+        width="${larguraBolha}"
+        height="${alturaBolha}"
+        rx="12"
+        ry="12"
+        fill="#202c33"
+      />
+
+      <path
+        d="
+          M ${bolhaX} ${bolhaY + 10}
+          L ${bolhaX - 12} ${bolhaY + 22}
+          L ${bolhaX} ${bolhaY + 34}
+          Z
+        "
+        fill="#202c33"
+      />
+
+      <text
+        x="${bolhaX + paddingX}"
+        y="${bolhaY + 30}"
+        font-family="sans-serif"
+        font-size="20"
+        font-weight="bold"
+        fill="#53bdeb"
+      >${escaparXml(nomeFinal)}</text>
+
       ${textoSvg}
-      <text x="${horarioX}" y="${horarioY}" font-family="sans-serif" font-size="15" fill="#8696a0">${horario}</text>
-      <text x="${horarioX + 30}" y="${horarioY}" font-family="sans-serif" font-size="15" fill="#53bdeb">✓✓</text>
+
+      <text
+        x="${horarioX}"
+        y="${horarioY}"
+        font-family="sans-serif"
+        font-size="14"
+        fill="#8696a0"
+      >${horario}</text>
+
+      <text
+        x="${horarioX + 38}"
+        y="${horarioY}"
+        font-family="sans-serif"
+        font-size="14"
+        fill="#53bdeb"
+      >✓✓</text>
     </svg>
   `
 
   const profileBuffer = await baixarFotoPerfil(sock, participante)
-  const fotoCircular = await criarFotoCircular(profileBuffer, 116)
+  const fotoCircular = await criarFotoCircular(profileBuffer, tamanhoFoto)
 
-  const fundo = await sharp({
+  const composicoes = [{ input: Buffer.from(svgBolha), top: 0, left: 0 }]
+  
+  if (fotoCircular) {
+    composicoes.push({
+      input: fotoCircular,
+      top: fotoY,
+      left: fotoX
+    })
+  }
+
+  return sharp({
     create: {
       width: CANVAS,
       height: CANVAS,
       channels: 4,
       background: { r: 11, g: 20, b: 26, alpha: 1 }
     }
-  }).png().toBuffer()
-
-  const composicoes = [{ input: Buffer.from(svgBolha), top: 0, left: 0 }]
-  if (fotoCircular) {
-    composicoes.push({ input: fotoCircular, top: bolhaY - 18, left: 12 })
-  }
-
-  return sharp(fundo).composite(composicoes).webp({ quality: 95 }).toBuffer()
+  })
+    .composite(composicoes)
+    .webp({ quality: 95 })
+    .toBuffer()
 }
 
 // ============================================================
@@ -752,14 +814,12 @@ ${previsao}`
 }
 
 // ============================================================
-// CONEXÃO COM LOGGER DO PINO (Garante logs no Easypanel)
+// CONEXÃO
 // ============================================================
 
 async function conectarBot() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
-  
-  // Configuração correta do logger para o Baileys não rodar mudo no container
-  const logger = pino({ level: 'silent' }) // Mude para 'info' se quiser ver logs ultra detalhados do Baileys
+  const logger = pino({ level: 'silent' })
 
   const sock = makeWASocket({
     auth: state,
