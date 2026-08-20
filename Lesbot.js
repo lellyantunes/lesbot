@@ -190,6 +190,7 @@ function carregarDB() {
     const data = JSON.parse(conteudo)
     return { ...bancoVazio(), ...data }
   } catch (err) {
+    console.error('❌ Erro ao carregar banco:', err)
     return bancoVazio()
   }
 }
@@ -197,7 +198,9 @@ function carregarDB() {
 function salvarDB(db) {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), 'utf8')
-  } catch (err) {}
+  } catch (err) {
+    console.error('❌ Erro ao salvar banco:', err)
+  }
 }
 
 // ============================================================
@@ -334,6 +337,7 @@ async function escolherMembroAleatorio(sock, jid) {
     if (!membros.length) return null
     return escolher(membros)
   } catch (err) {
+    console.error('❌ Erro ao buscar membros:', err)
     return null
   }
 }
@@ -407,6 +411,7 @@ async function baixarFotoPerfil(sock, participante) {
     const response = await axios.get(ppUrl, { responseType: 'arraybuffer', timeout: 10000 })
     return Buffer.from(response.data)
   } catch (err) {
+    console.log('⚠️ Não foi possível obter a foto de perfil.')
     return null
   }
 }
@@ -435,12 +440,14 @@ async function obterNomeUsuario(sock, jid, participante) {
       if (membro?.name) nome = membro.name
       else if (membro?.notify) nome = membro.notify
     }
-  } catch (err) {}
+  } catch (err) {
+    console.log('⚠️ Não consegui obter o nome do usuário.')
+  }
   return nome
 }
 
 // ============================================================
-// CRIAR STICKER #FF 100% BLINDADO CONTRA ERRO DE FONTE
+// CRIAR STICKER #FF
 // ============================================================
 
 async function criarStickerFF(sock, jid, participante, textoCitado) {
@@ -468,7 +475,6 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   const nomeUsuario = await obterNomeUsuario(sock, jid, participante)
   const nomeFinal = nomeUsuario.length > 22 ? nomeUsuario.substring(0, 22) + '...' : nomeUsuario
 
-  // Renderiza o texto principal do balão como SVG puro seguro (sem dependência de fontes externas do sistema)
   let textoSvg = ''
   linhas.forEach((linha, index) => {
     if (!linha) return
@@ -565,6 +571,7 @@ async function processarFigurinha(sock, jid, msg, texto) {
     const stickerBuffer = await criarStickerTexto(textoCitado)
     await sock.sendMessage(jid, { sticker: stickerBuffer })
   } catch (err) {
+    console.error('❌ Erro na figurinha:', err)
     await sock.sendMessage(jid, { text: '❌ Erro ao criar a figurinha.' })
   }
 }
@@ -731,6 +738,7 @@ ${previsao}`
 
     await sock.sendMessage(jid, { text: textoClima })
   } catch (err) {
+    console.error('❌ Erro no clima:', err)
     await sock.sendMessage(jid, { text: '❌ Erro ao buscar o clima.' })
   }
 }
@@ -755,6 +763,7 @@ async function conectarBot() {
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error instanceof Boom ? lastDisconnect.error.output.statusCode : null
       const deveReconectar = statusCode !== DisconnectReason.loggedOut
+      console.log('⚠️ Conexão fechada. Código:', statusCode, 'Reconectar:', deveReconectar)
       if (deveReconectar) {
         setTimeout(() => conectarBot(), 3000)
       } else {
@@ -917,9 +926,13 @@ async function conectarBot() {
         await processarClima(sock, jid, textoOriginal)
         return
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error('❌ Erro ao processar mensagem:', err)
+    }
   })
 }
 
 console.log('🚀 Iniciando bot...')
-conectarBot().catch(err => {})
+conectarBot().catch(err => {
+  console.error('❌ Erro fatal ao iniciar o bot:', err)
+})
