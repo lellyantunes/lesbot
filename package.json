@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "start": "node Lesbot.js"
+  },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
