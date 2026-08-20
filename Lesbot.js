@@ -383,12 +383,15 @@ async function enviarRanking(sock, jid, banco, opcoes) {
     return
   }
 
-  let texto = `${opcoes.titulo}\n\n`
+  let mensagemRanking = `${opcoes.titulo}\n\n`
   lista.forEach((item, index) => {
-    texto += `${index + 1}º - @${numero(item.id)} → *${item.valor}${opcoes.unidade}*\n`
+    mensagemRanking += `${index + 1}º - @${numero(item.id)} → *${item.valor}${opcoes.unidade}*\n`
   })
 
-  await sock.sendMessage(jid, { text, mentions: lista.map(item => item.id) })
+  await sock.sendMessage(jid, {
+    text: mensagemRanking,
+    mentions: lista.map(item => item.id)
+  })
 }
 
 async function criarStickerImagem(buffer) {
