@@ -439,8 +439,23 @@ async function criarFotoCircular(profileBuffer, tamanho) {
     .toBuffer()
 }
 
+async function obterNomeUsuario(sock, jid, participante) {
+  let nome = numero(participante)
+  try {
+    if (ehGrupo(jid)) {
+      const metadata = await sock.groupMetadata(jid)
+      const membro = metadata.participants.find(p => p.id === participante)
+      if (membro?.name) nome = membro.name
+      else if (membro?.notify) nome = membro.notify
+    }
+  } catch (err) {
+    console.log('⚠️ Erro ao buscar nome do usuário no grupo.')
+  }
+  return nome
+}
+
 // ============================================================
-// CRIAR STICKER #FF - SEM NOME E COMPACTO
+// CRIAR STICKER #FF - SEM NOME E COM TEXTO CENTRALIZADO NA VERTICAL
 // ============================================================
 
 async function criarStickerFF(sock, jid, participante, textoCitado) {
@@ -456,7 +471,7 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   }
 
   const alturaTexto = linhas.length * alturaLinha
-  const alturaBolha = Math.max(70, alturaTexto + 35)
+  const alturaBolha = Math.max(75, alturaTexto + 40)
 
   const agora = new Date()
   const hora = agora.getHours().toString().padStart(2, '0')
@@ -466,7 +481,8 @@ async function criarStickerFF(sock, jid, participante, textoCitado) {
   let textoSvg = ''
   linhas.forEach((linha, index) => {
     if (!linha) return
-    const y = 24 + (index * alturaLinha)
+    // Ajustado para 30 para o texto descer e não colar na borda superior
+    const y = 30 + (index * alturaLinha)
     textoSvg += `
       <text
         x="${paddingX}"
