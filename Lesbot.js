@@ -104,6 +104,44 @@ const desafios = [
 ]
 
 // ============================================================
+// FRASES DAS TETAS (PALLOMA)
+// ============================================================
+
+function getFraseTeta(nota) {
+  if (nota <= 4.9) {
+    const frases = [
+      'Tá meio melancólica hoje, mas a gente perdoa porque a dona é gata!',
+      'Faz volume na paisagem, ocupa espaço, mas na hora H não serve para absolutamente nada',
+      'Ficou no quase: tem o tamanho, mas falta todo o resto.',
+      'Conseguiu a proeza de ter menos conteúdo que sutiã de jogador de futebol.',
+      'Consegue ser pior do que ter mono piercing'
+    ]
+    return escolher(frases)
+  }
+
+  if (nota <= 7.9) {
+    const frases = [
+      'Teta pequena que dá pra colocar toda na boca (fofinha demais!).',
+      'Clássica, versátil e confortável. Nota boa pela simpatia!',
+      'No ponto certo. Nem muito nem pouco, na medida do amor.',
+      'Teta honesta. Cumpre o que promete no sutiã.'
+    ]
+    return escolher(frases)
+  }
+
+  const frases = [
+    'Teta macia, nível nuvem de algodão-doce. Perfeição pura!',
+    'Monumento histórico. Merece exposição num museu de Paris.',
+    'Gabaritou com louvor. Tem tanto volume que faz sombra no resto do grupo.',
+    'Nota 10 indiscutível! A oitava maravilha do mundo moderno, pesada, firme e sem defeitos.',
+    'Essa aqui é calibre pesado, orgulho da nação e referência em projeção mamária.',
+    'Perderia horas deliciando essa oitava maravilha do mundo',
+    'Trocaria todas as Disneys do mundo para degustar essa perfeição criada pelos Deuses'
+  ]
+  return escolher(frases)
+}
+
+// ============================================================
 // FRASES DOS TESTES
 // ============================================================
 
@@ -188,7 +226,7 @@ const brigas = [
 // ============================================================
 
 function bancoVazio() {
-  return { sapa: {}, xota: {}, corna: {}, gostosa: {}, bolso: {} }
+  return { sapa: {}, xota: {}, corna: {}, gostosa: {}, bolso: {}, teta: {} }
 }
 
 function carregarDB() {
@@ -196,7 +234,8 @@ function carregarDB() {
     if (!fs.existsSync(DB_FILE)) return bancoVazio()
     const conteudo = fs.readFileSync(DB_FILE, 'utf8')
     if (!conteudo.trim()) return bancoVazio()
-    return { ...bancoVazio(), ...JSON.parse(conteudo) }
+    const parsed = JSON.parse(conteudo)
+    return { ...bancoVazio(), ...parsed }
   } catch (err) {
     console.error('❌ Erro ao carregar banco:', err)
     return bancoVazio()
@@ -224,7 +263,13 @@ function escolher(lista) {
   return lista[Math.floor(Math.random() * lista.length)]
 }
 
-function criarBarra(valor, max = 100, tamanho = 10) {
+function criarBarra(valor, max = 10, tamanho = 10) {
+  const seguros = Math.max(0, Math.min(max, Number(valor) || 0))
+  const cheios = Math.round((seguros / max) * tamanho)
+  return '🍈'.repeat(cheios) + '⬜'.repeat(tamanho - cheios)
+}
+
+function criarBarraPorcentagem(valor, max = 100, tamanho = 10) {
   const seguros = Math.max(0, Math.min(max, Number(valor) || 0))
   const cheios = Math.round((seguros / max) * tamanho)
   return '🟩'.repeat(cheios) + '⬜'.repeat(tamanho - cheios)
@@ -653,7 +698,7 @@ async function executarTestePorcentagem({ sock, jid, db, banco, alvo, agora, tit
   }
 
   const porcentagem = Math.floor(Math.random() * 101)
-  const barraGerada = barra === 'vermelha' ? criarBarraVermelha(porcentagem) : criarBarra(porcentagem)
+  const barraGerada = barra === 'vermelha' ? criarBarraVermelha(porcentagem) : criarBarraPorcentagem(porcentagem)
 
   registro.vezes += 1
   registro.ultima = agora
@@ -669,6 +714,50 @@ ${barraGerada}
 🆕 Essa pessoa já fez o teste *${registro.vezes} vez(es)*
 ⏰ Próximo teste em 3 dias
 🏆 Use *${ranking}* pra ver o ranking completo`
+
+  await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
+}
+
+// ============================================================
+// EXECUTAR TESTE DE TETAS
+// ============================================================
+
+async function executarTetaTest(sock, jid, db, alvo, agora) {
+  if (!db.teta[alvo]) {
+    db.teta[alvo] = { vezes: 0, ultima: 0, ultimaNota: 0 }
+  }
+
+  const registro = db.teta[alvo]
+  const diasRestantes = verificarCooldown(registro, agora)
+
+  if (diasRestantes) {
+    await sock.sendMessage(jid, {
+      text: `⏰ Você só pode medir as tetas a cada 3 dias.\nPróxima medição em *${diasRestantes} dia(s)*.`,
+      mentions: [alvo]
+    })
+    return
+  }
+
+  // Sorteia uma nota de 0 a 10 com uma casa decimal (ex: 7.4)
+  const nota = Math.floor(Math.random() * 101) / 10
+  const barra = criarBarra(nota, 10, 10)
+  const frase = getFraseTeta(nota)
+
+  registro.vezes += 1
+  registro.ultima = agora
+  registro.ultimaNota = nota
+  salvarDB(db)
+
+  const textoFinal = `🍈 *TETATEST (MEDIDOR DE TETAS)* 🍈
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+👤 Avaliada: @${numero(alvo)}
+⭐ Nota: *${nota} / 10*
+${barra}
+💬 ${frase}
+🆕 Essa pessoa já mediu *${registro.vezes} vez(es)*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⏰ Próxima medição em 3 dias
+🏆 Use *#tetaranking* pra ver o ranking completo`
 
   await sock.sendMessage(jid, { text: textoFinal, mentions: [alvo] })
 }
@@ -867,6 +956,7 @@ async function conectarBot() {
       if (texto === '#cornareset') { await resetarRanking(sock, jid, remetente, db, 'corna', 'Cornatest'); return }
       if (texto === '#gostosareset') { await resetarRanking(sock, jid, remetente, db, 'gostosa', 'Gostosômetro'); return }
       if (texto === '#bolsoreset') { await resetarRanking(sock, jid, remetente, db, 'bolso', 'Bolsominiomêtro'); return }
+      if (texto === '#tetareset') { await resetarRanking(sock, jid, remetente, db, 'teta', 'Tetatest'); return }
 
       if (texto.startsWith('#saparanking') || texto.startsWith('#saparaking')) {
         await enviarRanking(sock, jid, db.sapa, { campo: 'ultimaPorcentagem', unidade: '%', titulo: '🏆 *RANKING COMPLETO - SAPAFOMÊTRO*', vazio: 'Ainda não tem ninguém no ranking do Sapafomêtro.' })
@@ -893,6 +983,11 @@ async function conectarBot() {
         return
       }
 
+      if (texto.startsWith('#tetaranking') || texto.startsWith('#tetaking')) {
+        await enviarRanking(sock, jid, db.teta, { campo: 'ultimaNota', unidade: '/10', titulo: '🏆 *RANKING COMPLETO - TETATEST*', vazio: 'Ainda não tem ninguém no ranking do Tetatest.' })
+        return
+      }
+
       if (texto.startsWith('#flerte')) {
         let alvo = mencoes[0]
         if (!alvo && isGrupo) alvo = await escolherMembroAleatorio(sock, jid)
@@ -912,7 +1007,7 @@ async function conectarBot() {
           return
         }
         const porcentagem = Math.floor(Math.random() * 101)
-        const barra = criarBarra(porcentagem)
+        const barra = criarBarraPorcentagem(porcentagem)
         const frase = getFraseSapa(porcentagem)
         registro.vezes += 1
         registro.ultima = agora
@@ -926,6 +1021,12 @@ async function conectarBot() {
       if (texto.startsWith('#xota')) {
         const alvo = mencoes[0] || remetente
         await executarXota(sock, jid, db, alvo, agora)
+        return
+      }
+
+      if (texto.startsWith('#tetatest') || texto === '#teta' || texto.startsWith('#teta ')) {
+        const alvo = mencoes[0] || remetente
+        await executarTetaTest(sock, jid, db, alvo, agora)
         return
       }
 
