@@ -5,7 +5,7 @@ const fs = require('fs')
 const path = require('path')
 const axios = require('axios')
 const sharp = require('sharp')
-const { createCanvas, loadImage } = require('canvas')
+const puppeteer = require('puppeteer-core')
 
 // ====================== DONO DO BOT ======================
 const DONO = "5511911831463@s.whatsapp.net" // ← TROQUE PELO SEU NÚMERO
@@ -382,164 +382,172 @@ async function baixarFotoPerfil(sock, jid) {
   }
 }
 
-async function criarFotoCircular(buffer, tamanho) {
-  if (!buffer) return null
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tamanho}" height="${tamanho}"><circle cx="${tamanho / 2}" cy="${tamanho / 2}" r="${tamanho / 2}" fill="white"/></svg>`
-  return sharp(buffer)
-    .resize(tamanho, tamanho)
-    .composite([{ input: Buffer.from(svg), blend: 'dest-in' }])
-    .png()
-    .toBuffer()
+// Converte formatação WhatsApp (*bold*, _italic_) pra HTML
+function whatsappParaHtml(texto) {
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\*(.+?)\*/g, '<b>$1</b>')
+    .replace(/_(.+?)_/g, '<i>$1</i>')
+    .replace(/~(.+?)~/g, '<s>$1</s>')
+    .replace(/```(.+?)```/gs, '<code>$1</code>')
+    .replace(/\n/g, '<br>')
 }
 
-function quebrarTextoCanvas(ctx, texto, maxWidth) {
-  // Separa por \n primeiro, depois quebra linhas longas por largura real em pixels
-  const paragrafos = texto.split('\n')
-  const linhasFinais = []
-  for (const paragrafo of paragrafos) {
-    if (paragrafo.trim() === '') {
-      linhasFinais.push({ text: '', vazia: true })
-      continue
-    }
-    const palavras = paragrafo.split(' ')
-    let linhaAtual = ''
-    for (const palavra of palavras) {
-      const teste = linhaAtual ? linhaAtual + ' ' + palavra : palavra
-      if (ctx.measureText(teste).width <= maxWidth) {
-        linhaAtual = teste
-      } else {
-        if (linhaAtual) linhasFinais.push({ text: linhaAtual, vazia: false })
-        linhaAtual = palavra
-      }
-    }
-    if (linhaAtual) linhasFinais.push({ text: linhaAtual, vazia: false })
+// Browser compartilhado pra não abrir um novo a cada sticker
+let _browser = null
+async function getBrowser() {
+  if (!_browser || !_browser.isConnected()) {
+    _browser = await puppeteer.launch({
+      headless: 'new',
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    })
   }
-  return linhasFinais.slice(0, 25)
+  return _browser
+}
+
+async function renderizarHtmlParaPng(html, width, height) {
+  const browser = await getBrowser()
+  const page = await browser.newPage()
+  await page.setViewport({ width, height, deviceScaleFactor: 2 })
+  await page.setContent(html, { waitUntil: 'networkidle0' })
+
+  // Pega o tamanho real do conteúdo
+  const bbox = await page.evaluate(() => {
+    const el = document.getElementById('wrap')
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    return { x: r.x, y: r.y, width: r.width, height: r.height }
+  })
+
+  let screenshotBuffer
+  if (bbox) {
+    screenshotBuffer = await page.screenshot({
+      type: 'png',
+      omitBackground: true,
+      clip: { x: bbox.x, y: bbox.y, width: Math.ceil(bbox.width), height: Math.ceil(bbox.height) }
+    })
+  } else {
+    screenshotBuffer = await page.screenshot({ type: 'png', omitBackground: true })
+  }
+  await page.close()
+  return screenshotBuffer
 }
 
 async function criarStickerFF(sock, jid, participante, textoCitado) {
-  const SIZE = 512
-  const paddingX = 16
-  const paddingY = 16
-  const fontSize = 18
-  const alturaLinha = 25
-  const alturaLinhaVazia = 13
-  const tamanhoFoto = 60
-  const espacoFoto = 10
-  const raio = 12
-
   // Buscar foto de perfil
   const profileBuffer = await baixarFotoPerfil(sock, participante)
-  const temFoto = !!profileBuffer
+  const fotoBase64 = profileBuffer ? `data:image/jpeg;base64,${profileBuffer.toString('base64')}` : null
 
-  // Calcular largura disponível pra bolha
-  const bolhaX = temFoto ? tamanhoFoto + espacoFoto + 6 : 10
-  const larguraBolha = SIZE - bolhaX - 10
-  const maxTextoW = larguraBolha - paddingX * 2
-
-  // Canvas temporário só pra medir texto
-  const tmpCanvas = createCanvas(1, 1)
-  const tmpCtx = tmpCanvas.getContext('2d')
-  tmpCtx.font = `${fontSize}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", "Helvetica Neue", Arial, sans-serif`
-
-  const linhas = quebrarTextoCanvas(tmpCtx, textoCitado, maxTextoW)
-
-  // Altura do texto
-  let alturaTexto = 0
-  for (const l of linhas) {
-    alturaTexto += l.vazia ? alturaLinhaVazia : alturaLinha
-  }
-
-  // Horário
   const agora = new Date()
   const horario = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`
 
-  const alturaBolha = Math.min(SIZE - 20, alturaTexto + paddingY * 2 + 24)
+  const textoHtml = whatsappParaHtml(textoCitado)
 
-  // Canvas final
-  const canvas = createCanvas(SIZE, SIZE)
-  const ctx = canvas.getContext('2d')
-
-  // Fundo transparente (já é o default do canvas)
-
-  // Centralizar verticalmente
-  const topoY = Math.round((SIZE - Math.max(alturaBolha, temFoto ? tamanhoFoto : 0)) / 2)
-
-  // Desenhar foto de perfil circular
-  if (temFoto) {
-    try {
-      const img = await loadImage(profileBuffer)
-      const fotoY = topoY
-      const cx = 6 + tamanhoFoto / 2
-      const cy = fotoY + tamanhoFoto / 2
-      ctx.save()
-      ctx.beginPath()
-      ctx.arc(cx, cy, tamanhoFoto / 2, 0, Math.PI * 2)
-      ctx.closePath()
-      ctx.clip()
-      ctx.drawImage(img, 6, fotoY, tamanhoFoto, tamanhoFoto)
-      ctx.restore()
-    } catch (e) {
-      // Sem foto, segue sem
-    }
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; }
+  #wrap { display: inline-flex; align-items: flex-start; gap: 6px; padding: 8px; }
+  .foto {
+    width: 55px; height: 55px; border-radius: 50%;
+    object-fit: cover; flex-shrink: 0;
+    ${fotoBase64 ? '' : 'display: none;'}
   }
-
-  // Desenhar bolha com cantos arredondados
-  const bx = bolhaX
-  const by = topoY
-  const bw = larguraBolha
-  const bh = alturaBolha
-
-  ctx.fillStyle = '#202c33'
-  ctx.beginPath()
-  ctx.moveTo(bx + raio, by)
-  ctx.lineTo(bx + bw - raio, by)
-  ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + raio)
-  ctx.lineTo(bx + bw, by + bh - raio)
-  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - raio, by + bh)
-  ctx.lineTo(bx + raio, by + bh)
-  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - raio)
-  ctx.lineTo(bx, by + raio)
-  ctx.quadraticCurveTo(bx, by, bx + raio, by)
-  ctx.closePath()
-  ctx.fill()
-
-  // Setinha da bolha apontando pra foto
-  if (temFoto) {
-    ctx.beginPath()
-    ctx.moveTo(bx, by + 14)
-    ctx.lineTo(bx - 10, by + 24)
-    ctx.lineTo(bx, by + 34)
-    ctx.closePath()
-    ctx.fill()
+  .bolha {
+    background: #202c33;
+    border-radius: 0 12px 12px 12px;
+    padding: 10px 14px 6px 14px;
+    max-width: 380px;
+    min-width: 120px;
+    position: relative;
+    color: #e9edef;
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.4;
+    word-wrap: break-word;
   }
-
-  // Desenhar texto linha por linha (com suporte a emoji!)
-  ctx.font = `${fontSize}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", "Helvetica Neue", Arial, sans-serif`
-  ctx.fillStyle = '#e9edef'
-  ctx.textBaseline = 'top'
-
-  let cursorY = by + paddingY
-  for (const linha of linhas) {
-    if (linha.vazia) {
-      cursorY += alturaLinhaVazia
-      continue
-    }
-    ctx.fillText(linha.text, bx + paddingX, cursorY)
-    cursorY += alturaLinha
+  .bolha::before {
+    content: '';
+    position: absolute;
+    left: -8px; top: 0;
+    border-width: 0 8px 10px 0;
+    border-style: solid;
+    border-color: transparent #202c33 transparent transparent;
   }
+  .bolha b { color: #e9edef; }
+  .bolha i { color: #e9edef; }
+  .meta {
+    display: flex; justify-content: flex-end; align-items: center;
+    gap: 4px; margin-top: 4px;
+  }
+  .hora { font-size: 11px; color: #8696a0; }
+  .check { font-size: 11px; color: #53bdeb; }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    ${fotoBase64 ? `<img class="foto" src="${fotoBase64}">` : ''}
+    <div class="bolha">
+      <div class="texto">${textoHtml}</div>
+      <div class="meta">
+        <span class="hora">${horario}</span>
+        <span class="check">✓✓</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
 
-  // Horário + check
-  ctx.font = '12px Arial, sans-serif'
-  ctx.fillStyle = '#8696a0'
-  const horarioW = ctx.measureText(horario).width
-  ctx.fillText(horario, bx + bw - paddingX - horarioW - 28, by + bh - 18)
-  ctx.fillStyle = '#53bdeb'
-  ctx.fillText('✓✓', bx + bw - paddingX - 24, by + bh - 18)
+  const pngBuffer = await renderizarHtmlParaPng(html, 500, 600)
 
-  // Converter canvas pra PNG buffer e depois pra webp via sharp
-  const pngBuffer = canvas.toBuffer('image/png')
-  return sharp(pngBuffer).webp({ quality: 95 }).toBuffer()
+  // Redimensionar pra 512x512 com fundo transparente
+  return sharp(pngBuffer)
+    .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .webp({ quality: 95 })
+    .toBuffer()
+}
+
+async function criarStickerTexto(textoCitado) {
+  const textoHtml = whatsappParaHtml(textoCitado)
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: transparent; }
+  #wrap {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 30px;
+    min-width: 200px; min-height: 200px;
+    max-width: 480px;
+  }
+  .texto {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 28px; font-weight: bold;
+    color: #000; text-align: center;
+    line-height: 1.4; word-wrap: break-word;
+  }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <div class="texto">${textoHtml}</div>
+  </div>
+</body>
+</html>`
+
+  const pngBuffer = await renderizarHtmlParaPng(html, 500, 500)
+  return sharp(pngBuffer)
+    .resize(512, 512, { fit: 'contain', background: { r: 255, g: 255, b: 255, alpha: 1 } })
+    .webp({ quality: 90 })
+    .toBuffer()
 }
 
 // ====================== CONEXÃO DO BOT ======================
@@ -629,41 +637,13 @@ async function conectarBot() {
           return
         }
 
-        // #f com texto (usa canvas pra suportar emojis)
+        // #f com texto
         const textoCitado = extrairTextoMensagem(quoted)
         if (!textoCitado) {
           await sock.sendMessage(jid, { text: "Só consigo fazer figurinha de *imagem* ou *texto*." })
           return
         }
-        const cvs = createCanvas(512, 512)
-        const ctxF = cvs.getContext('2d')
-        ctxF.fillStyle = '#ffffff'
-        ctxF.fillRect(0, 0, 512, 512)
-        ctxF.font = 'bold 30px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", Arial, sans-serif'
-        ctxF.fillStyle = '#000000'
-        ctxF.textAlign = 'center'
-        ctxF.textBaseline = 'top'
-        // Quebrar texto usando measureText
-        const maxW = 470
-        const linhasF = []
-        for (const paragrafo of textoCitado.split('\n')) {
-          if (paragrafo.trim() === '') { linhasF.push(''); continue }
-          const palavras = paragrafo.split(' ')
-          let atual = ''
-          for (const p of palavras) {
-            const teste = atual ? atual + ' ' + p : p
-            if (ctxF.measureText(teste).width <= maxW) { atual = teste }
-            else { if (atual) linhasF.push(atual); atual = p }
-          }
-          if (atual) linhasF.push(atual)
-        }
-        const espF = 38
-        const altTotalF = linhasF.length * espF
-        const inicioYF = Math.round((512 - altTotalF) / 2)
-        linhasF.forEach((l, i) => {
-          if (l !== '') ctxF.fillText(l, 256, inicioYF + i * espF)
-        })
-        const stickerBuffer = await sharp(cvs.toBuffer('image/png')).webp({ quality: 90 }).toBuffer()
+        const stickerBuffer = await criarStickerTexto(textoCitado)
         await sock.sendMessage(jid, { sticker: stickerBuffer })
       } catch (err) {
         console.error("Erro na figurinha:", err)
