@@ -9,9 +9,8 @@ const sharp = require('sharp')
 // ====================== DONO DO BOT ======================
 const DONO = "5511911831463@s.whatsapp.net" // ← TROQUE PELO SEU NÚMERO
 
-// ====================== CANTADAS (mais opções lésbicas) ======================
+// ====================== CANTADAS ======================
 const cantadas = [
-  // Originais
   "Se eu fosse um vírus, seria o COVID… porque eu quero ficar dentro de você.",
   "Você é Wi-Fi? Porque eu tô sentindo uma conexão forte e quero me conectar agora.",
   "Me empresta seu número? Não, melhor: me empresta sua boca por uns 5 minutos.",
@@ -27,8 +26,6 @@ const cantadas = [
   "Eu não sou do tipo que só beija. Eu marco território.",
   "Você cheira a problema gostoso. Posso me meter nele?",
   "Se você estiver triste posso te dar meu ombro, para você apoiar as pernas até ficar feliz!",
-
-  // Novas - mais lésbicas, misturando doce e picante
   "Você é o tipo de mulher que faz eu esquecer o nome das outras.",
   "Se beijar você fosse crime, eu já estaria cumprindo prisão perpétua.",
   "Eu não preciso de GPS… só do caminho até a sua boca.",
@@ -45,7 +42,7 @@ const cantadas = [
   "Eu não quero só uma noite. Quero várias… e de manhã ainda fazer café pra você.",
   "Você tem cara de quem gosta de ser a pequena e a grande no mesmo relacionamento.",
   "Me deixa ser a razão do seu sorriso… e também do seu gemido.",
-  "Se a gente ficasse, eu ia te apresentar pra minha mãe como ‘a mulher da minha vida’.",
+  "Se a gente ficasse, eu ia te apresentar pra minha mãe como 'a mulher da minha vida'.",
   "Você é linda demais pra ficar só na friendzone. Me dá uma chance de te conquistar de verdade.",
   "Posso te chamar de minha? Mesmo que seja só por essa madrugada.",
   "Você tem o olhar de quem já derrubou muita sapatão… e eu quero ser a próxima.",
@@ -108,7 +105,7 @@ function getFraseXota(profundidade) {
   if (profundidade <= 20) return "Tá começando a crescer, mas ainda cabe só um dedo..."
   if (profundidade <= 30) return "Tu é sapadrão até no tamanho da xota né viado!"
   if (profundidade <= 40) return "Tu andou usando alargador ai em baixo? Já cabe um litrão de Original!"
-  if (profundidade <= 60) return "Se você levar a sério “se Deus fez é porque cabe” já pode colocar um cone ai minha filha!"
+  if (profundidade <= 60) return "Se você levar a sério \"se Deus fez é porque cabe\" já pode colocar um cone ai minha filha!"
   if (profundidade <= 80) return "Se você gostasse de homem, nem o kid bengala ia te querer de tão larga. Desavexe!"
   return "Com isso tudo ai de profundidade + as mulher que você pega, vão te chamar pra regravar A Caverna do dragão."
 }
@@ -311,6 +308,18 @@ function quebrarTexto(texto, maxChars = 22) {
   return linhas.slice(0, 8)
 }
 
+function escaparXml(unsafe) {
+  return unsafe.replace(/[<>&'"]/g, function (c) {
+    switch (c) {
+      case '<': return '&lt;'
+      case '>': return '&gt;'
+      case '&': return '&amp;'
+      case '\'': return '&apos;'
+      case '"': return '&quot;'
+    }
+  })
+}
+
 function normalizarSigno(texto) {
   const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
   const mapa = {
@@ -326,7 +335,6 @@ const SIGNOS_VALIDOS = ['áries', 'touro', 'gêmeos', 'câncer', 'leão', 'virge
 
 function gerarHoroscopo(signo) {
   const hoje = new Date().toISOString().slice(0, 10)
-  // Seed simples baseado na data + signo
   let seed = 0
   const str = hoje + signo
   for (let i = 0; i < str.length; i++) seed += str.charCodeAt(i)
@@ -334,7 +342,6 @@ function gerarHoroscopo(signo) {
     seed = (seed * 9301 + 49297) % 233280
     return Math.floor(seed / 233280 * max)
   }
-
   return {
     amor: amorTextos[rng(amorTextos.length)],
     trabalho: trabalhoTextos[rng(trabalhoTextos.length)],
@@ -348,19 +355,88 @@ function obterHoroscopo(signo) {
   const cache = carregarCacheSapa()
   const hoje = new Date().toISOString().slice(0, 10)
   const chave = `${signo}_${hoje}`
-
   if (cache[chave]) return cache[chave]
-
-  // Limpa cache antigo
   const novoCache = {}
   for (const k in cache) {
     if (k.includes(hoje)) novoCache[k] = cache[k]
   }
-
   const dados = gerarHoroscopo(signo)
   novoCache[chave] = dados
   salvarCacheSapa(novoCache)
   return dados
+}
+
+// ====================== FUNÇÕES DE FIGURINHAS ======================
+function extrairTextoMensagem(msg) {
+  return msg?.conversation || msg?.extendedTextMessage?.text || msg?.imageMessage?.caption || ""
+}
+
+async function baixarFotoPerfil(sock, jid) {
+  try {
+    const url = await sock.profilePictureUrl(jid, 'image')
+    const res = await axios.get(url, { responseType: 'arraybuffer' })
+    return Buffer.from(res.data)
+  } catch (e) {
+    return null
+  }
+}
+
+async function criarFotoCircular(buffer, tamanho) {
+  if (!buffer) return null
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tamanho}" height="${tamanho}"><circle cx="${tamanho / 2}" cy="${tamanho / 2}" r="${tamanho / 2}" fill="white"/></svg>`
+  return sharp(buffer)
+    .resize(tamanho, tamanho)
+    .composite([{ input: Buffer.from(svg), blend: 'dest-in' }])
+    .png()
+    .toBuffer()
+}
+
+async function criarStickerFF(sock, jid, participante, textoCitado) {
+  const CANVAS = 512
+  const larguraBolha = 360
+  const paddingX = 20
+  const alturaLinha = 32
+  let linhas = quebrarTexto(textoCitado, 25)
+  if (textoCitado.length > 200 && linhas.length === 8) linhas[7] = '...'
+  const alturaTexto = linhas.length * alturaLinha
+  const alturaBolha = Math.max(75, alturaTexto + 40)
+  const agora = new Date()
+  const horario = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`
+
+  let textoSvg = ''
+  linhas.forEach((linha, index) => {
+    if (!linha) return
+    const y = 30 + (index * alturaLinha)
+    textoSvg += `<text x="${paddingX}" y="${y}" font-family="sans-serif" font-size="24" font-weight="normal" fill="#e9edef">${escaparXml(linha)}</text>`
+  })
+
+  const horarioX = larguraBolha - 85
+  const horarioY = alturaBolha - 12
+  const svgBolha = `
+    <svg width="${larguraBolha + 20}" height="${alturaBolha + 20}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="15" y="0" width="${larguraBolha}" height="${alturaBolha}" rx="12" ry="12" fill="#202c33" />
+      <path d="M 15 10 L 3 22 L 15 34 Z" fill="#202c33" />
+      <g transform="translate(15, 0)">${textoSvg}</g>
+      <text x="${horarioX + 15}" y="${horarioY}" font-family="sans-serif" font-size="14" fill="#8696a0">${horario}</text>
+      <text x="${horarioX + 53}" y="${horarioY}" font-family="sans-serif" font-size="14" fill="#53bdeb">✓✓</text>
+    </svg>`
+
+  const tamanhoFoto = 85
+  const profileBuffer = await baixarFotoPerfil(sock, participante)
+  const fotoCircular = await criarFotoCircular(profileBuffer, tamanhoFoto)
+
+  const fundoTransparente = await sharp({
+    create: { width: CANVAS, height: CANVAS, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+  }).png().toBuffer()
+
+  const alturaTotalBloco = Math.max(tamanhoFoto, alturaBolha)
+  const topoY = Math.round((CANVAS - alturaTotalBloco) / 2)
+
+  const composicoes = []
+  if (fotoCircular) composicoes.push({ input: fotoCircular, top: topoY + 5, left: 30 })
+  composicoes.push({ input: Buffer.from(svgBolha), top: topoY, left: fotoCircular ? 120 : 70 })
+
+  return sharp(fundoTransparente).composite(composicoes).webp({ quality: 95 }).toBuffer()
 }
 
 // ====================== CONEXÃO DO BOT ======================
@@ -419,127 +495,50 @@ async function conectarBot() {
         })
         return
       }
-      try {
-        const quoted = context.quotedMessage
-        const participant = context.participant
+      const quoted = context.quotedMessage
+      const participante = context.participant || context.remoteJid || jid
 
+      try {
+        // #ff — sticker estilo WhatsApp com foto de perfil + bolha + horário
         if (texto === '#ff') {
-          const textoCitado = quoted.conversation || quoted.extendedTextMessage?.text || ""
+          const textoCitado = extrairTextoMensagem(quoted)
           if (!textoCitado) {
             await sock.sendMessage(jid, { text: "O #ff só funciona com mensagens de *texto*." })
             return
           }
-          let profileBuffer = null
-          try {
-            const ppUrl = await sock.profilePictureUrl(participant, 'image')
-            const response = await axios.get(ppUrl, { responseType: 'arraybuffer' })
-            profileBuffer = Buffer.from(response.data)
-          } catch (e) {}
-
-          const linhas = quebrarTexto(textoCitado, 26)
-          const espacamento = 34
-          const alturaBolha = Math.max(110, (linhas.length * espacamento) + 50)
-          const larguraBolha = 355
-          let textosSvg = linhas.map((linha, i) => {
-            const y = 42 + (i * espacamento)
-            return `<text x="22" y="${y}" font-family="Arial, sans-serif" font-size="28" fill="#e9edef">${linha.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`
-          }).join('\n')
-
-          let stickerBuffer
-          if (profileBuffer) {
-            const tamanhoFoto = 130
-            const circuloMask = Buffer.from(`
-              <svg width="${tamanhoFoto}" height="${tamanhoFoto}">
-                <circle cx="${tamanhoFoto/2}" cy="${tamanhoFoto/2}" r="${tamanhoFoto/2}" fill="white"/>
-              </svg>
-            `)
-            const fotoCircular = await sharp(profileBuffer)
-              .resize(tamanhoFoto, tamanhoFoto)
-              .composite([{ input: circuloMask, blend: 'dest-in' }])
-              .png()
-              .toBuffer()
-
-            const fundo = await sharp({
-              create: {
-                width: 512,
-                height: 512,
-                channels: 4,
-                background: { r: 11, g: 20, b: 26, alpha: 1 }
-              }
-            }).png().toBuffer()
-
-            const svgBolha = `
-              <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-                <rect x="165" y="40" width="${larguraBolha}" height="${alturaBolha}" rx="20" ry="20" fill="#202c33"/>
-                <path d="M165 70 L145 90 L165 110 Z" fill="#202c33"/>
-                <g transform="translate(185, 40)">
-                  ${textosSvg}
-                </g>
-              </svg>
-            `
-            stickerBuffer = await sharp(fundo)
-              .composite([
-                { input: fotoCircular, top: 55, left: 22 },
-                { input: Buffer.from(svgBolha), top: 0, left: 0 }
-              ])
-              .webp({ quality: 95 })
-              .toBuffer()
-          } else {
-            const svg = `
-              <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-                <rect width="100%" height="100%" fill="#0b141a"/>
-                <rect x="70" y="40" width="${larguraBolha + 40}" height="${alturaBolha}" rx="20" ry="20" fill="#202c33"/>
-                <g transform="translate(90, 40)">
-                  ${textosSvg}
-                </g>
-              </svg>
-            `
-            stickerBuffer = await sharp(Buffer.from(svg)).webp({ quality: 95 }).toBuffer()
-          }
+          const stickerBuffer = await criarStickerFF(sock, jid, participante, textoCitado)
           await sock.sendMessage(jid, { sticker: stickerBuffer })
           return
         }
 
+        // #f com imagem
         if (quoted.imageMessage) {
           const quotedMsg = {
-            key: {
-              remoteJid: jid,
-              id: context.stanzaId,
-              fromMe: false,
-              participant: context.participant
-            },
+            key: { remoteJid: jid, id: context.stanzaId, fromMe: false, participant: context.participant },
             message: quoted
           }
-          const buffer = await downloadMediaMessage(
-            quotedMsg,
-            'buffer',
-            {},
-            { reuploadRequest: sock.updateMediaMessage }
-          )
+          const buffer = await downloadMediaMessage(quotedMsg, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage })
           const stickerBuffer = await sharp(buffer)
-            .resize(512, 512, {
-              fit: 'contain',
-              background: { r: 0, g: 0, b: 0, alpha: 0 }
-            })
+            .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
             .webp({ quality: 80 })
             .toBuffer()
           await sock.sendMessage(jid, { sticker: stickerBuffer })
           return
         }
 
-        const textoCitado = quoted.conversation || quoted.extendedTextMessage?.text || ""
+        // #f com texto
+        const textoCitado = extrairTextoMensagem(quoted)
         if (!textoCitado) {
           await sock.sendMessage(jid, { text: "Só consigo fazer figurinha de *imagem* ou *texto*." })
           return
         }
         const linhas = quebrarTexto(textoCitado, 22)
-        const totalLinhas = linhas.length
         const espacamento = 40
-        const alturaTotal = totalLinhas * espacamento
+        const alturaTotal = linhas.length * espacamento
         const inicioY = Math.round((512 - alturaTotal) / 2) + 30
         const textosSvg = linhas.map((linha, i) => {
           const y = inicioY + (i * espacamento)
-          return `<text x="256" y="${y}" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#000000" text-anchor="middle">${linha.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>`
+          return `<text x="256" y="${y}" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#000000" text-anchor="middle">${escaparXml(linha)}</text>`
         }).join('\n')
         const svg = `
           <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
@@ -558,7 +557,7 @@ async function conectarBot() {
 
     // ========== RESETS ==========
     if (texto === '#sapareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
+      if (remetente !== DONO) {
         await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
         return
       }
@@ -568,7 +567,7 @@ async function conectarBot() {
       return
     }
     if (texto === '#xotareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
+      if (remetente !== DONO) {
         await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
         return
       }
@@ -578,7 +577,7 @@ async function conectarBot() {
       return
     }
     if (texto === '#cornareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
+      if (remetente !== DONO) {
         await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
         return
       }
@@ -588,7 +587,7 @@ async function conectarBot() {
       return
     }
     if (texto === '#gostosareset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
+      if (remetente !== DONO) {
         await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
         return
       }
@@ -598,7 +597,7 @@ async function conectarBot() {
       return
     }
     if (texto === '#bolsoreset') {
-      if (!remetente.includes(DONO.replace('@s.whatsapp.net', ''))) {
+      if (remetente !== DONO) {
         await sock.sendMessage(jid, { text: "❌ Só o dono do bot pode resetar." })
         return
       }
@@ -707,7 +706,7 @@ async function conectarBot() {
       return
     }
 
-    // ========== #ship (NOVO) ==========
+    // ========== #ship ==========
     if (texto.startsWith('#ship')) {
       let p1 = mencoes[0]
       let p2 = mencoes[1]
@@ -719,13 +718,17 @@ async function conectarBot() {
         if (!p1 && !p2) {
           p1 = membros[Math.floor(Math.random() * membros.length)]
           p2 = membros[Math.floor(Math.random() * membros.length)]
-          while (p2 === p1 && membros.length > 1) {
+          let tentativas = 0
+          while (p2 === p1 && membros.length > 1 && tentativas < 20) {
             p2 = membros[Math.floor(Math.random() * membros.length)]
+            tentativas++
           }
         } else if (p1 && !p2) {
           p2 = membros[Math.floor(Math.random() * membros.length)]
-          while (p2 === p1 && membros.length > 1) {
+          let tentativas = 0
+          while (p2 === p1 && membros.length > 1 && tentativas < 20) {
             p2 = membros[Math.floor(Math.random() * membros.length)]
+            tentativas++
           }
         }
       }
@@ -745,7 +748,7 @@ async function conectarBot() {
       return
     }
 
-    // ========== #sapaastral (NOVO) ==========
+    // ========== #sapaastral ==========
     if (texto.startsWith('#sapaastral')) {
       const partes = textoOriginal.trim().split(/\s+/)
       if (partes.length < 2) {
@@ -784,7 +787,7 @@ ${dados.vida_bandida}`
       return
     }
 
-    // ========== #teta (NOVO) ==========
+    // ========== #teta ==========
     if (texto.startsWith('#teta')) {
       let alvo = mencoes[0]
       if (!alvo && isGrupo) {
@@ -1047,7 +1050,7 @@ ${barra}
       return
     }
 
-    // ========== #briga (EXPANDIDO) ==========
+    // ========== #briga ==========
     if (texto.startsWith('#briga')) {
       let p1 = mencoes[0]
       let p2 = mencoes[1]
@@ -1057,8 +1060,10 @@ ${barra}
         const membros = metadata.participants.map(p => p.id).filter(id => id !== sock.user.id)
         p1 = membros[Math.floor(Math.random() * membros.length)]
         p2 = membros[Math.floor(Math.random() * membros.length)]
-        while (p2 === p1 && membros.length > 1) {
+        let tentativas = 0
+        while (p2 === p1 && membros.length > 1 && tentativas < 20) {
           p2 = membros[Math.floor(Math.random() * membros.length)]
+          tentativas++
         }
       }
 
@@ -1069,7 +1074,6 @@ ${barra}
       if (!p2) p2 = remetente
 
       const brigas = [
-        // Originais
         `@${p1.split('@')[0]} e @${p2.split('@')[0]} se pegaram no tapa porque as duas queriam a mesma menina no rolê. No final as duas acabaram se beijando e a menina ficou só olhando.`,
         `A briga começou quando @${p1.split('@')[0]} falou que @${p2.split('@')[0]} era "só amiga". Agora as duas estão se xingando de corna e ao mesmo tempo se olhando com tesão.`,
         `@${p1.split('@')[0]} acusou @${p2.split('@')[0]} de roubar sua crush. A discussão ficou tão quente que as duas acabaram no banheiro juntas "resolvendo" o problema.`,
@@ -1078,8 +1082,6 @@ ${barra}
         `A discussão começou por ciúmes. @${p1.split('@')[0]} não gostou de ver @${p2.split('@')[0]} flertando com outra. Agora as duas estão se comendo de raiva (e de tesão).`,
         `@${p1.split('@')[0]} mandou um "sua puta" pra @${p2.split('@')[0]}. A resposta foi um "vem ser puta junto". E elas foram.`,
         `Briga clássica de sapatão: as duas querendo ser a "namorada oficial". Resultado: as duas viraram amantes uma da outra e a namorada oficial ficou de fora.`,
-
-        // Novas - brigas de verdade engraçadas + tacar coisas
         `@${p1.split('@')[0]} e @${p2.split('@')[0]} se pegaram no tapa no meio do bar. @${p1.split('@')[0]} tacou o botijão de gás (vazio, graças a Deus) e @${p2.split('@')[0]} respondeu com a cadeira de plástico. A polícia chegou e as duas ainda estavam se xingando de corna.`,
         `A briga começou por causa de uma long neck. @${p1.split('@')[0]} jurou que era dela, @${p2.split('@')[0]} jurou que não. Resultado: uma panela voou, um chinelo acertou alguém do grupo e as duas terminaram no chão se puxando pelo cabelo.`,
         `@${p1.split('@')[0]} descobriu que @${p2.split('@')[0]} ficou com a crush dela. A vingança foi rápida: tacou o controle remoto, o travesseiro e quase a TV. Só parou quando a vizinha ameaçou chamar a polícia.`,
