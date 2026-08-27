@@ -5,6 +5,7 @@ const fs = require('fs')
 const path = require('path')
 const axios = require('axios')
 const sharp = require('sharp')
+const { createCanvas, loadImage } = require('canvas')
 
 // ====================== DONO DO BOT ======================
 const DONO = "5511911831463@s.whatsapp.net" // ← TROQUE PELO SEU NÚMERO
@@ -391,52 +392,154 @@ async function criarFotoCircular(buffer, tamanho) {
     .toBuffer()
 }
 
+function quebrarTextoCanvas(ctx, texto, maxWidth) {
+  // Separa por \n primeiro, depois quebra linhas longas por largura real em pixels
+  const paragrafos = texto.split('\n')
+  const linhasFinais = []
+  for (const paragrafo of paragrafos) {
+    if (paragrafo.trim() === '') {
+      linhasFinais.push({ text: '', vazia: true })
+      continue
+    }
+    const palavras = paragrafo.split(' ')
+    let linhaAtual = ''
+    for (const palavra of palavras) {
+      const teste = linhaAtual ? linhaAtual + ' ' + palavra : palavra
+      if (ctx.measureText(teste).width <= maxWidth) {
+        linhaAtual = teste
+      } else {
+        if (linhaAtual) linhasFinais.push({ text: linhaAtual, vazia: false })
+        linhaAtual = palavra
+      }
+    }
+    if (linhaAtual) linhasFinais.push({ text: linhaAtual, vazia: false })
+  }
+  return linhasFinais.slice(0, 25)
+}
+
 async function criarStickerFF(sock, jid, participante, textoCitado) {
-  const CANVAS = 512
-  const larguraBolha = 360
-  const paddingX = 20
-  const alturaLinha = 32
-  let linhas = quebrarTexto(textoCitado, 25)
-  if (textoCitado.length > 200 && linhas.length === 8) linhas[7] = '...'
-  const alturaTexto = linhas.length * alturaLinha
-  const alturaBolha = Math.max(75, alturaTexto + 40)
+  const SIZE = 512
+  const paddingX = 16
+  const paddingY = 16
+  const fontSize = 18
+  const alturaLinha = 25
+  const alturaLinhaVazia = 13
+  const tamanhoFoto = 60
+  const espacoFoto = 10
+  const raio = 12
+
+  // Buscar foto de perfil
+  const profileBuffer = await baixarFotoPerfil(sock, participante)
+  const temFoto = !!profileBuffer
+
+  // Calcular largura disponível pra bolha
+  const bolhaX = temFoto ? tamanhoFoto + espacoFoto + 6 : 10
+  const larguraBolha = SIZE - bolhaX - 10
+  const maxTextoW = larguraBolha - paddingX * 2
+
+  // Canvas temporário só pra medir texto
+  const tmpCanvas = createCanvas(1, 1)
+  const tmpCtx = tmpCanvas.getContext('2d')
+  tmpCtx.font = `${fontSize}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", "Helvetica Neue", Arial, sans-serif`
+
+  const linhas = quebrarTextoCanvas(tmpCtx, textoCitado, maxTextoW)
+
+  // Altura do texto
+  let alturaTexto = 0
+  for (const l of linhas) {
+    alturaTexto += l.vazia ? alturaLinhaVazia : alturaLinha
+  }
+
+  // Horário
   const agora = new Date()
   const horario = `${agora.getHours().toString().padStart(2, '0')}:${agora.getMinutes().toString().padStart(2, '0')}`
 
-  let textoSvg = ''
-  linhas.forEach((linha, index) => {
-    if (!linha) return
-    const y = 30 + (index * alturaLinha)
-    textoSvg += `<text x="${paddingX}" y="${y}" font-family="sans-serif" font-size="24" font-weight="normal" fill="#e9edef">${escaparXml(linha)}</text>`
-  })
+  const alturaBolha = Math.min(SIZE - 20, alturaTexto + paddingY * 2 + 24)
 
-  const horarioX = larguraBolha - 85
-  const horarioY = alturaBolha - 12
-  const svgBolha = `
-    <svg width="${larguraBolha + 20}" height="${alturaBolha + 20}" xmlns="http://www.w3.org/2000/svg">
-      <rect x="15" y="0" width="${larguraBolha}" height="${alturaBolha}" rx="12" ry="12" fill="#202c33" />
-      <path d="M 15 10 L 3 22 L 15 34 Z" fill="#202c33" />
-      <g transform="translate(15, 0)">${textoSvg}</g>
-      <text x="${horarioX + 15}" y="${horarioY}" font-family="sans-serif" font-size="14" fill="#8696a0">${horario}</text>
-      <text x="${horarioX + 53}" y="${horarioY}" font-family="sans-serif" font-size="14" fill="#53bdeb">✓✓</text>
-    </svg>`
+  // Canvas final
+  const canvas = createCanvas(SIZE, SIZE)
+  const ctx = canvas.getContext('2d')
 
-  const tamanhoFoto = 85
-  const profileBuffer = await baixarFotoPerfil(sock, participante)
-  const fotoCircular = await criarFotoCircular(profileBuffer, tamanhoFoto)
+  // Fundo transparente (já é o default do canvas)
 
-  const fundoTransparente = await sharp({
-    create: { width: CANVAS, height: CANVAS, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
-  }).png().toBuffer()
+  // Centralizar verticalmente
+  const topoY = Math.round((SIZE - Math.max(alturaBolha, temFoto ? tamanhoFoto : 0)) / 2)
 
-  const alturaTotalBloco = Math.max(tamanhoFoto, alturaBolha)
-  const topoY = Math.round((CANVAS - alturaTotalBloco) / 2)
+  // Desenhar foto de perfil circular
+  if (temFoto) {
+    try {
+      const img = await loadImage(profileBuffer)
+      const fotoY = topoY
+      const cx = 6 + tamanhoFoto / 2
+      const cy = fotoY + tamanhoFoto / 2
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(cx, cy, tamanhoFoto / 2, 0, Math.PI * 2)
+      ctx.closePath()
+      ctx.clip()
+      ctx.drawImage(img, 6, fotoY, tamanhoFoto, tamanhoFoto)
+      ctx.restore()
+    } catch (e) {
+      // Sem foto, segue sem
+    }
+  }
 
-  const composicoes = []
-  if (fotoCircular) composicoes.push({ input: fotoCircular, top: topoY + 5, left: 30 })
-  composicoes.push({ input: Buffer.from(svgBolha), top: topoY, left: fotoCircular ? 120 : 70 })
+  // Desenhar bolha com cantos arredondados
+  const bx = bolhaX
+  const by = topoY
+  const bw = larguraBolha
+  const bh = alturaBolha
 
-  return sharp(fundoTransparente).composite(composicoes).webp({ quality: 95 }).toBuffer()
+  ctx.fillStyle = '#202c33'
+  ctx.beginPath()
+  ctx.moveTo(bx + raio, by)
+  ctx.lineTo(bx + bw - raio, by)
+  ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + raio)
+  ctx.lineTo(bx + bw, by + bh - raio)
+  ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - raio, by + bh)
+  ctx.lineTo(bx + raio, by + bh)
+  ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - raio)
+  ctx.lineTo(bx, by + raio)
+  ctx.quadraticCurveTo(bx, by, bx + raio, by)
+  ctx.closePath()
+  ctx.fill()
+
+  // Setinha da bolha apontando pra foto
+  if (temFoto) {
+    ctx.beginPath()
+    ctx.moveTo(bx, by + 14)
+    ctx.lineTo(bx - 10, by + 24)
+    ctx.lineTo(bx, by + 34)
+    ctx.closePath()
+    ctx.fill()
+  }
+
+  // Desenhar texto linha por linha (com suporte a emoji!)
+  ctx.font = `${fontSize}px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", "Helvetica Neue", Arial, sans-serif`
+  ctx.fillStyle = '#e9edef'
+  ctx.textBaseline = 'top'
+
+  let cursorY = by + paddingY
+  for (const linha of linhas) {
+    if (linha.vazia) {
+      cursorY += alturaLinhaVazia
+      continue
+    }
+    ctx.fillText(linha.text, bx + paddingX, cursorY)
+    cursorY += alturaLinha
+  }
+
+  // Horário + check
+  ctx.font = '12px Arial, sans-serif'
+  ctx.fillStyle = '#8696a0'
+  const horarioW = ctx.measureText(horario).width
+  ctx.fillText(horario, bx + bw - paddingX - horarioW - 28, by + bh - 18)
+  ctx.fillStyle = '#53bdeb'
+  ctx.fillText('✓✓', bx + bw - paddingX - 24, by + bh - 18)
+
+  // Converter canvas pra PNG buffer e depois pra webp via sharp
+  const pngBuffer = canvas.toBuffer('image/png')
+  return sharp(pngBuffer).webp({ quality: 95 }).toBuffer()
 }
 
 // ====================== CONEXÃO DO BOT ======================
@@ -526,27 +629,41 @@ async function conectarBot() {
           return
         }
 
-        // #f com texto
+        // #f com texto (usa canvas pra suportar emojis)
         const textoCitado = extrairTextoMensagem(quoted)
         if (!textoCitado) {
           await sock.sendMessage(jid, { text: "Só consigo fazer figurinha de *imagem* ou *texto*." })
           return
         }
-        const linhas = quebrarTexto(textoCitado, 22)
-        const espacamento = 40
-        const alturaTotal = linhas.length * espacamento
-        const inicioY = Math.round((512 - alturaTotal) / 2) + 30
-        const textosSvg = linhas.map((linha, i) => {
-          const y = inicioY + (i * espacamento)
-          return `<text x="256" y="${y}" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#000000" text-anchor="middle">${escaparXml(linha)}</text>`
-        }).join('\n')
-        const svg = `
-          <svg width="512" height="512" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100%" height="100%" fill="#ffffff"/>
-            ${textosSvg}
-          </svg>
-        `
-        const stickerBuffer = await sharp(Buffer.from(svg)).webp({ quality: 90 }).toBuffer()
+        const cvs = createCanvas(512, 512)
+        const ctxF = cvs.getContext('2d')
+        ctxF.fillStyle = '#ffffff'
+        ctxF.fillRect(0, 0, 512, 512)
+        ctxF.font = 'bold 30px "Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji", Arial, sans-serif'
+        ctxF.fillStyle = '#000000'
+        ctxF.textAlign = 'center'
+        ctxF.textBaseline = 'top'
+        // Quebrar texto usando measureText
+        const maxW = 470
+        const linhasF = []
+        for (const paragrafo of textoCitado.split('\n')) {
+          if (paragrafo.trim() === '') { linhasF.push(''); continue }
+          const palavras = paragrafo.split(' ')
+          let atual = ''
+          for (const p of palavras) {
+            const teste = atual ? atual + ' ' + p : p
+            if (ctxF.measureText(teste).width <= maxW) { atual = teste }
+            else { if (atual) linhasF.push(atual); atual = p }
+          }
+          if (atual) linhasF.push(atual)
+        }
+        const espF = 38
+        const altTotalF = linhasF.length * espF
+        const inicioYF = Math.round((512 - altTotalF) / 2)
+        linhasF.forEach((l, i) => {
+          if (l !== '') ctxF.fillText(l, 256, inicioYF + i * espF)
+        })
+        const stickerBuffer = await sharp(cvs.toBuffer('image/png')).webp({ quality: 90 }).toBuffer()
         await sock.sendMessage(jid, { sticker: stickerBuffer })
       } catch (err) {
         console.error("Erro na figurinha:", err)
